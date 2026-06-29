@@ -1,0 +1,17 @@
+@import './base.css';
+
+:root {
+  --control-height: 2.95rem;
+  --control-radius: 16px;
+}
+
+#app {
+  min-height: 100vh;
+  font-weight: 400;
+}
+
+main,
+section,
+article {
+  position: relative;
+}
