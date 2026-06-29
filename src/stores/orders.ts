@@ -48,7 +48,13 @@ export const useOrdersStore = defineStore('orders', () => {
 
     const request: OrderFilters = { ...filters }
     const range = shippingStore.getActiveRange()
-    if (range) {
+    const hasExplicitConfirmedRange = Boolean(
+      request.confirmed_date ||
+      request.confirmed_date_from ||
+      request.confirmed_date_to,
+    )
+
+    if (range && !hasExplicitConfirmedRange) {
       request.confirmed_date_from = range.confirmed_date_from
       request.confirmed_date_to = range.confirmed_date_to
       delete request.confirmed_date

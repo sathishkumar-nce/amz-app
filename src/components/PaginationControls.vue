@@ -4,7 +4,14 @@
       <strong>{{ rangeStart }}-{{ rangeEnd }}</strong>
       <span>of {{ total }} {{ itemLabel }}</span>
       <span class="pager__meta">Page {{ safePage }} of {{ safeTotalPages }}</span>
-      <span class="pager__meta">{{ limit }} per page</span>
+      <label class="pager__limit">
+        <span>Rows per page</span>
+        <select :value="limit" class="pager__select" @change="$emit('limit-change', Number(($event.target as HTMLSelectElement).value))">
+          <option v-for="option in pageSizeOptions" :key="option" :value="option">
+            {{ option }}
+          </option>
+        </select>
+      </label>
     </div>
 
     <div v-if="safeTotalPages > 1" class="pager__actions">
@@ -38,12 +45,15 @@ const props = withDefaults(defineProps<{
   total: number
   limit: number
   itemLabel?: string
+  pageSizeOptions?: number[]
 }>(), {
-  itemLabel: 'items'
+  itemLabel: 'items',
+  pageSizeOptions: () => [10, 25, 50, 100, 200, 500],
 })
 
 defineEmits<{
   change: [page: number]
+  'limit-change': [limit: number]
 }>()
 
 const safeTotalPages = computed(() => Math.max(props.totalPages || 0, props.total > 0 ? 1 : 0))
@@ -94,6 +104,24 @@ const visiblePages = computed(() => {
 
 .pager__meta {
   color: #64748b;
+}
+
+.pager__limit {
+  display: inline-flex;
+  gap: 0.45rem;
+  align-items: center;
+  color: #64748b;
+}
+
+.pager__select {
+  min-height: 2.3rem;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
+  font: inherit;
+  font-weight: 800;
+  padding: 0 0.6rem;
 }
 
 .pager__actions {

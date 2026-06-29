@@ -17,8 +17,16 @@
     <OrderSearchBar
       v-model:searchKey="searchKey"
       v-model:searchValue="searchValue"
+      v-model:searchOperator="searchOperator"
       :loading="ordersStore.loading"
       @search="applySearch"
+      @clear="clearSearch"
+    />
+
+    <OrderListFilterBar
+      v-model="advancedFilters"
+      :loading="ordersStore.loading"
+      @apply="applySearch"
       @clear="clearSearch"
     />
 
@@ -40,16 +48,28 @@
           <thead>
             <tr>
               <th class="cell-order">Order ID</th>
-              <th>Confirmed</th>
-              <th>Status</th>
+              <th>
+                <SortableHeader label="Confirmed" :direction="sortState.key === 'confirmed_date' ? sortState.direction : null" @sort="setSort('confirmed_date', $event)" />
+              </th>
+              <th>
+                <SortableHeader label="Status" :direction="sortState.key === 'order_status' ? sortState.direction : null" @sort="setSort('order_status', $event)" />
+              </th>
               <th>Customer</th>
               <th>Phone</th>
               <th>City / State</th>
               <th class="cell-product">Product</th>
-              <th class="cell-quantity">Qty</th>
-              <th>Thickness</th>
-              <th>SKU</th>
-              <th>Priority</th>
+              <th class="cell-quantity">
+                <SortableHeader label="Qty" :direction="sortState.key === 'quantity' ? sortState.direction : null" @sort="setSort('quantity', $event)" />
+              </th>
+              <th>
+                <SortableHeader label="Thickness" :direction="sortState.key === 'thickness' ? sortState.direction : null" @sort="setSort('thickness', $event)" />
+              </th>
+              <th>
+                <SortableHeader label="SKU" :direction="sortState.key === 'sku' ? sortState.direction : null" @sort="setSort('sku', $event)" />
+              </th>
+              <th>
+                <SortableHeader label="Priority" :direction="sortState.key === 'priority' ? sortState.direction : null" @sort="setSort('priority', $event)" />
+              </th>
               <th>is_round</th>
               <th>Width (in)</th>
               <th>Length (in)</th>
@@ -138,6 +158,7 @@
         :limit="ordersStore.pagination.limit"
         item-label="orders"
         @change="changePage"
+        @limit-change="changeLimit"
       />
     </section>
   </div>
@@ -146,12 +167,16 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import ListUtilityBar from '@/components/ListUtilityBar.vue'
+import OrderListFilterBar from '@/components/OrderListFilterBar.vue'
 import OrderSearchBar from '@/components/OrderSearchBar.vue'
 import PaginationControls from '@/components/PaginationControls.vue'
+import SortableHeader from '@/components/SortableHeader.vue'
 import { useAmazonRowHighlightRulesStore } from '@/stores/amazonRowHighlightRules'
 import { useOrdersStore } from '@/stores/orders'
 import type { Order, OrderProduct, UpdateManualFieldsRequest, UpdateProductManualFieldsRequest } from '@/types'
+import { buildOrderListAdvancedRequest, createOrderListAdvancedFilters } from '@/utils/orderListFilters'
 import { formatStandardDate } from '@/utils/orderData'
+import { sortItems, type SortDirection } from '@/utils/tableSort'
 
 type SheetRow = {
   rowKey: string
@@ -170,11 +195,19 @@ type ConfirmationRowEdit = {
   corner_radius_and_notes: string
 }
 
+type SortKey = 'confirmed_date' | 'order_status' | 'quantity' | 'thickness' | 'sku' | 'priority'
+
 const ordersStore = useOrdersStore()
 const rowHighlightRulesStore = useAmazonRowHighlightRulesStore()
 const filters = ref({
   page: 1,
   limit: 200,
+})
+const advancedFilters = ref(createOrderListAdvancedFilters())
+const searchOperator = ref<'gt' | 'gte' | 'lt' | 'lte' | 'eq'>('gte')
+const sortState = ref<{ key: SortKey | null; direction: SortDirection }>({
+  key: null,
+  direction: 'asc',
 })
 const searchKey = ref('order_id')
 const searchValue = ref('')
@@ -268,8 +301,31 @@ const visibleRows = computed<VisibleRow[]>(() => {
       ...row,
       edit: ensureRowEdit(row),
     }))
-  return rows
+
+  if (!sortState.value.key) return rows
+
+  return sortItems(rows, (row) => {
+    switch (sortState.value.key) {
+      case 'confirmed_date':
+        return row.order.date_confirmed || row.order.date_add || ''
+      case 'order_status':
+        return row.order.order_status || ''
+      case 'quantity':
+        return row.product.quantity
+      case 'thickness':
+        return row.product.thickness || ''
+      case 'sku':
+        return row.product.sku || ''
+      case 'priority':
+        return row.order.priority || ''
+      default:
+        return ''
+    }
+  }, sortState.value.direction)
 })
+const setSort = (key: SortKey, direction: SortDirection) => {
+  sortState.value = { key, direction }
+}
 
 const buildSearchFilters = () => {
   const value = searchValue.value.trim()
@@ -302,6 +358,18 @@ const buildSearchFilters = () => {
   if (searchKey.value === 'order_status') {
     return { order_status: value }
   }
+  if (searchKey.value === 'default_width_in_inches') {
+    return {
+      default_width_in_inches: value,
+      default_width_in_inches_operator: searchOperator.value,
+    }
+  }
+  if (searchKey.value === 'default_length_in_inches') {
+    return {
+      default_length_in_inches: value,
+      default_length_in_inches_operator: searchOperator.value,
+    }
+  }
   return {}
 }
 
@@ -311,7 +379,9 @@ const applyFilters = async () => {
     limit: filters.value.limit,
     search_key: searchKey.value,
     search_value: searchValue.value.trim() || undefined,
+    search_operator: searchOperator.value,
     ...buildSearchFilters(),
+    ...buildOrderListAdvancedRequest(advancedFilters.value),
   })
   syncRowEdits()
 }
@@ -324,6 +394,8 @@ const applySearch = async () => {
 const clearSearch = async () => {
   searchKey.value = 'order_id'
   searchValue.value = ''
+  searchOperator.value = 'gte'
+  advancedFilters.value = createOrderListAdvancedFilters()
   filters.value.page = 1
   await applyFilters()
 }
@@ -331,6 +403,13 @@ const clearSearch = async () => {
 const changePage = async (page: number) => {
   if (page === filters.value.page) return
   filters.value.page = page
+  await applyFilters()
+}
+
+const changeLimit = async (limit: number) => {
+  if (limit === filters.value.limit) return
+  filters.value.limit = limit
+  filters.value.page = 1
   await applyFilters()
 }
 

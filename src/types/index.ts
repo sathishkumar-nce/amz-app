@@ -143,6 +143,7 @@ export interface OrderFilters {
   amazon_order_id?: string
   search_key?: string
   search_value?: string
+  search_operator?: 'gt' | 'gte' | 'lt' | 'lte' | 'eq' | string
   confirmed_date?: string
   confirmed_date_from?: string
   confirmed_date_to?: string
@@ -150,7 +151,13 @@ export interface OrderFilters {
   mobile?: string
   phone?: string
   sku?: string
+  thickness?: string
   quantity?: number | string
+  quantity_operator?: 'gt' | 'gte' | 'lt' | 'lte' | 'eq'
+  default_width_in_inches?: number | string
+  default_width_in_inches_operator?: 'gt' | 'gte' | 'lt' | 'lte' | 'eq'
+  default_length_in_inches?: number | string
+  default_length_in_inches_operator?: 'gt' | 'gte' | 'lt' | 'lte' | 'eq'
   delivery_city?: string
   delivery_state?: string
   priority?: string
@@ -159,7 +166,9 @@ export interface OrderFilters {
   return_initiated?: boolean | string
   return_initiated_compromised?: boolean | string
   safety_claimed?: boolean | string
+  is_round?: boolean | string
   round_product?: boolean
+  has_customer_inputs?: boolean
   missing_customer_inputs?: boolean
   sort_by?: string
   sort_dir?: 'asc' | 'desc'

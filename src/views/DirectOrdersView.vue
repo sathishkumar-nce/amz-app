@@ -297,6 +297,7 @@
           :limit="store.pagination.limit"
           item-label="orders"
           @change="changePage"
+          @limit-change="changeLimit"
         />
       </template>
     </section>
@@ -443,6 +444,13 @@ const resetFilters = async () => {
 const changePage = async (page: number) => {
   if (page === store.pagination.page) return
   filters.value.page = page
+  await loadOrders()
+}
+
+const changeLimit = async (limit: number) => {
+  if (limit === filters.value.limit) return
+  filters.value.limit = limit
+  filters.value.page = 1
   await loadOrders()
 }
 

@@ -17,26 +17,38 @@
     <OrderSearchBar
       v-model:searchKey="searchKey"
       v-model:searchValue="searchValue"
+      v-model:searchOperator="searchOperator"
       :loading="ordersStore.loading"
       @search="applySearch"
       @clear="clearSearch"
     />
 
-    <section class="returns-filter-shell">
-      <select v-model="returnInitiatedFilter" class="filter-input" :disabled="ordersStore.loading">
-        <option value="">All return initiated states</option>
-        <option value="true">true</option>
-        <option value="false">false</option>
-      </select>
-      <select v-model="returnCompromisedFilter" class="filter-input" :disabled="ordersStore.loading">
-        <option value="">All return compromised states</option>
-        <option value="true">true</option>
-        <option value="false">false</option>
-      </select>
-      <button type="button" class="filter-button" :disabled="ordersStore.loading" @click="applySearch">
-        Apply Filter
-      </button>
-    </section>
+    <OrderListFilterBar
+      v-model="advancedFilters"
+      :loading="ordersStore.loading"
+      @apply="applySearch"
+      @clear="clearSearch"
+    >
+      <template #extra>
+        <label class="filter-field">
+          <span>Return initiated</span>
+          <select v-model="returnInitiatedFilter" class="filter-input" :disabled="ordersStore.loading">
+            <option value="">All return initiated states</option>
+            <option value="true">true</option>
+            <option value="false">false</option>
+          </select>
+        </label>
+
+        <label class="filter-field">
+          <span>Return compromised</span>
+          <select v-model="returnCompromisedFilter" class="filter-input" :disabled="ordersStore.loading">
+            <option value="">All return compromised states</option>
+            <option value="true">true</option>
+            <option value="false">false</option>
+          </select>
+        </label>
+      </template>
+    </OrderListFilterBar>
 
     <section class="returns-shell">
       <div v-if="ordersStore.loading" class="empty-state">Loading returns-initiated queue...</div>
@@ -57,13 +69,19 @@
             <thead>
               <tr>
                 <th class="cell-order">Order ID</th>
-                <th class="cell-status">Order Status</th>
-                <th class="cell-date">Date Confirmed</th>
+                <th class="cell-status">
+                  <SortableHeader label="Order Status" :direction="sortState.key === 'order_status' ? sortState.direction : null" @sort="setSort('order_status', $event)" />
+                </th>
+                <th class="cell-date">
+                  <SortableHeader label="Date Confirmed" :direction="sortState.key === 'confirmed_date' ? sortState.direction : null" @sort="setSort('confirmed_date', $event)" />
+                </th>
                 <th class="cell-product">Products</th>
                 <th class="cell-customer">Customer</th>
                 <th class="cell-phone">Phone</th>
                 <th class="cell-city">City</th>
-                <th class="cell-quantity">Quantity</th>
+                <th class="cell-quantity">
+                  <SortableHeader label="Quantity" :direction="sortState.key === 'quantity' ? sortState.direction : null" @sort="setSort('quantity', $event)" />
+                </th>
                 <th class="cell-size">Customer Width (in)</th>
                 <th class="cell-size">Customer Length (in)</th>
                 <th class="cell-notes">Corner Style and Notes</th>
@@ -173,6 +191,7 @@
         :limit="ordersStore.pagination.limit"
         item-label="orders"
         @change="changePage"
+        @limit-change="changeLimit"
       />
     </section>
   </div>
@@ -181,12 +200,16 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import ListUtilityBar from '@/components/ListUtilityBar.vue'
+import OrderListFilterBar from '@/components/OrderListFilterBar.vue'
 import OrderSearchBar from '@/components/OrderSearchBar.vue'
 import PaginationControls from '@/components/PaginationControls.vue'
+import SortableHeader from '@/components/SortableHeader.vue'
 import { useAmazonRowHighlightRulesStore } from '@/stores/amazonRowHighlightRules'
 import { useOrdersStore } from '@/stores/orders'
 import type { Order, OrderProduct, UpdateProductManualFieldsRequest } from '@/types'
+import { buildOrderListAdvancedRequest, createOrderListAdvancedFilters } from '@/utils/orderListFilters'
 import { formatStandardDate } from '@/utils/orderData'
+import { sortItems, type SortDirection } from '@/utils/tableSort'
 
 type SheetRow = {
   rowKey: string
@@ -206,11 +229,19 @@ type VisibleRow = SheetRow & {
   edit: ReturnEditRow
 }
 
+type SortKey = 'order_status' | 'confirmed_date' | 'quantity'
+
 const ordersStore = useOrdersStore()
 const rowHighlightRulesStore = useAmazonRowHighlightRulesStore()
 const filters = ref({
   page: 1,
   limit: 100,
+})
+const advancedFilters = ref(createOrderListAdvancedFilters())
+const searchOperator = ref<'gt' | 'gte' | 'lt' | 'lte' | 'eq'>('gte')
+const sortState = ref<{ key: SortKey | null; direction: SortDirection }>({
+  key: null,
+  direction: 'asc',
 })
 const searchKey = ref('order_id')
 const searchValue = ref('')
@@ -257,14 +288,33 @@ const syncRowEdits = () => {
   }
 }
 
-const visibleRows = computed<VisibleRow[]>(() =>
-  sheetRows.value.map((row) => ({
-    ...row,
-    edit: ensureRowEdit(row),
-  })),
-)
+const visibleRows = computed<VisibleRow[]>(() => {
+  const rows = sheetRows.value
+    .map((row) => ({
+      ...row,
+      edit: ensureRowEdit(row),
+    }))
+
+  if (!sortState.value.key) return rows
+
+  return sortItems(rows, (row) => {
+    switch (sortState.value.key) {
+      case 'order_status':
+        return row.order.order_status || ''
+      case 'confirmed_date':
+        return row.order.date_confirmed || row.order.date_add || ''
+      case 'quantity':
+        return row.product.quantity
+      default:
+        return ''
+    }
+  }, sortState.value.direction)
+})
 
 const getRowStyle = (row: SheetRow) => rowHighlightRulesStore.getRowHighlightStyle(row.order, [row.product])
+const setSort = (key: SortKey, direction: SortDirection) => {
+  sortState.value = { key, direction }
+}
 
 const formatDate = (value?: string | null) => formatStandardDate(value)
 const formatText = (value?: string | null) => value?.trim() || 'Not available'
@@ -300,6 +350,18 @@ const buildSearchFilters = () => {
   if (searchKey.value === 'is_round') return { round_product: value === 'true' }
   if (searchKey.value === 'confirmed_date') return { confirmed_date: value }
   if (searchKey.value === 'order_status') return { order_status: value }
+  if (searchKey.value === 'default_width_in_inches') {
+    return {
+      default_width_in_inches: value,
+      default_width_in_inches_operator: searchOperator.value,
+    }
+  }
+  if (searchKey.value === 'default_length_in_inches') {
+    return {
+      default_length_in_inches: value,
+      default_length_in_inches_operator: searchOperator.value,
+    }
+  }
   return {}
 }
 
@@ -382,9 +444,11 @@ const applyFilters = async () => {
     limit: filters.value.limit,
     search_key: searchKey.value,
     search_value: searchValue.value.trim() || undefined,
+    search_operator: searchOperator.value,
     return_initiated: returnInitiatedValue,
     return_initiated_compromised: returnCompromisedValue,
     ...buildSearchFilters(),
+    ...buildOrderListAdvancedRequest(advancedFilters.value),
   })
   syncRowEdits()
 }
@@ -397,6 +461,8 @@ const applySearch = async () => {
 const clearSearch = async () => {
   searchKey.value = 'order_id'
   searchValue.value = ''
+  searchOperator.value = 'gte'
+  advancedFilters.value = createOrderListAdvancedFilters()
   returnInitiatedFilter.value = ''
   returnCompromisedFilter.value = ''
   filters.value.page = 1
@@ -406,6 +472,13 @@ const clearSearch = async () => {
 const changePage = async (page: number) => {
   if (page === filters.value.page) return
   filters.value.page = page
+  await applyFilters()
+}
+
+const changeLimit = async (limit: number) => {
+  if (limit === filters.value.limit) return
+  filters.value.limit = limit
+  filters.value.page = 1
   await applyFilters()
 }
 

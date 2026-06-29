@@ -13,6 +13,22 @@
       </button>
     </section>
 
+    <OrderListFilterBar
+      v-model="advancedFilters"
+      :loading="ordersStore.loading"
+      @apply="applySearch"
+      @clear="clearFilters"
+    />
+
+    <OrderSearchBar
+      v-model:searchKey="searchKey"
+      v-model:searchValue="searchValue"
+      v-model:searchOperator="searchOperator"
+      :loading="ordersStore.loading"
+      @search="applySearch"
+      @clear="clearSearch"
+    />
+
     <section class="orders-shell">
       <div v-if="ordersStore.loading" class="empty-state">Loading orders...</div>
       <div v-else-if="visibleRows.length === 0" class="empty-state">No orders found.</div>
@@ -32,17 +48,31 @@
             <tr>
               <th>Order ID</th>
               <th>Product ID</th>
-              <th>Confirmed Date</th>
+              <th>
+                <SortableHeader label="Confirmed Date" :direction="sortState.key === 'confirmed_date' ? sortState.direction : null" @sort="setSort('confirmed_date', $event)" />
+              </th>
               <th>Customer</th>
               <th>Phone</th>
               <th>City / State</th>
               <th>Products</th>
-              <th>SKU</th>
-              <th>Thickness</th>
-              <th>Priority</th>
-              <th>Order Status</th>
-              <th>Default Width (in)</th>
-              <th>Default Length (in)</th>
+              <th>
+                <SortableHeader label="SKU" :direction="sortState.key === 'sku' ? sortState.direction : null" @sort="setSort('sku', $event)" />
+              </th>
+              <th>
+                <SortableHeader label="Thickness" :direction="sortState.key === 'thickness' ? sortState.direction : null" @sort="setSort('thickness', $event)" />
+              </th>
+              <th>
+                <SortableHeader label="Priority" :direction="sortState.key === 'priority' ? sortState.direction : null" @sort="setSort('priority', $event)" />
+              </th>
+              <th>
+                <SortableHeader label="Order Status" :direction="sortState.key === 'order_status' ? sortState.direction : null" @sort="setSort('order_status', $event)" />
+              </th>
+              <th>
+                <SortableHeader label="Default Width (in)" :direction="sortState.key === 'default_width_in' ? sortState.direction : null" @sort="setSort('default_width_in', $event)" />
+              </th>
+              <th>
+                <SortableHeader label="Default Length (in)" :direction="sortState.key === 'default_length_in' ? sortState.direction : null" @sort="setSort('default_length_in', $event)" />
+              </th>
               <th>Customer Width (in)</th>
               <th>Customer Length (in)</th>
               <th>Default Width (mm)</th>
@@ -220,6 +250,7 @@
         :limit="ordersStore.pagination.limit"
         item-label="orders"
         @change="changePage"
+        @limit-change="changeLimit"
       />
     </section>
   </div>
@@ -228,11 +259,16 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import ListUtilityBar from '@/components/ListUtilityBar.vue'
+import OrderListFilterBar from '@/components/OrderListFilterBar.vue'
+import OrderSearchBar from '@/components/OrderSearchBar.vue'
 import PaginationControls from '@/components/PaginationControls.vue'
+import SortableHeader from '@/components/SortableHeader.vue'
 import { useAmazonRowHighlightRulesStore } from '@/stores/amazonRowHighlightRules'
 import { useOrdersStore } from '@/stores/orders'
 import type { Order, OrderProduct, UpdateProductManualFieldsRequest } from '@/types'
+import { buildOrderListAdvancedRequest, createOrderListAdvancedFilters } from '@/utils/orderListFilters'
 import { formatStandardDate } from '@/utils/orderData'
+import { sortItems, type SortDirection } from '@/utils/tableSort'
 
 type ProductEditRow = {
   customer_width_in_inches: string
@@ -261,9 +297,26 @@ type VisibleRow = SheetRow & {
   rowStyle: Record<string, string>
 }
 
+type SortKey =
+  | 'confirmed_date'
+  | 'sku'
+  | 'thickness'
+  | 'priority'
+  | 'order_status'
+  | 'default_width_in'
+  | 'default_length_in'
+
 const ordersStore = useOrdersStore()
 const rowHighlightRulesStore = useAmazonRowHighlightRulesStore()
 const loading = ref(false)
+const advancedFilters = ref(createOrderListAdvancedFilters())
+const searchKey = ref('order_id')
+const searchValue = ref('')
+const searchOperator = ref<'gt' | 'gte' | 'lt' | 'lte' | 'eq'>('gte')
+const sortState = ref<{ key: SortKey | null; direction: SortDirection }>({
+  key: null,
+  direction: 'asc',
+})
 const filters = ref({
   page: 1,
   limit: 100,
@@ -308,7 +361,7 @@ const toRowStyleRecord = (style: { '--row-highlight-background'?: string }): Rec
 }
 
 const visibleRows = computed<VisibleRow[]>(() => {
-  return sheetRows.value.map((row) => {
+  const rows = sheetRows.value.map((row) => {
     const productEdit = ensureProductEdit(row.order.amazon_order_id, row.product.order_product_id, row.product)
     const orderEdit = ensureOrderEdit(row.order)
 
@@ -319,6 +372,29 @@ const visibleRows = computed<VisibleRow[]>(() => {
       rowStyle: toRowStyleRecord(rowHighlightRulesStore.getRowHighlightStyle(row.order, [row.product])),
     }
   })
+
+  if (!sortState.value.key) return rows
+
+  return sortItems(rows, (row) => {
+    switch (sortState.value.key) {
+      case 'confirmed_date':
+        return row.order.date_confirmed || row.order.date_add || ''
+      case 'sku':
+        return row.product.sku || ''
+      case 'thickness':
+        return row.product.thickness || ''
+      case 'priority':
+        return row.order.priority || ''
+      case 'order_status':
+        return row.order.order_status || ''
+      case 'default_width_in':
+        return row.product.default_width_in_inches
+      case 'default_length_in':
+        return row.product.default_length_in_inches
+      default:
+        return ''
+    }
+  }, sortState.value.direction)
 })
 
 const formatDate = (dateString?: string | null) => formatStandardDate(dateString)
@@ -326,6 +402,9 @@ const formatText = (value?: string | null) => value?.trim() || 'Not available'
 const formatLocation = (city?: string | null, state?: string | null) => [city, state].filter(Boolean).join(' / ') || 'Not available'
 const formatNumber = (value?: number | null) => (value == null ? 'Not set' : String(value))
 const numberToString = (value?: number | null) => (value == null ? '' : String(value))
+const setSort = (key: SortKey, direction: SortDirection) => {
+  sortState.value = { key, direction }
+}
 
 const productKey = (amazonOrderId: string, orderProductId: number) => `${amazonOrderId}:${orderProductId}`
 
@@ -365,6 +444,34 @@ const toOptionalNumber = (value?: string | number | null) => {
 
 const isMultiQuantity = (product: OrderProduct) => Number(product.quantity ?? 0) > 1
 
+const buildSearchFilters = () => {
+  const value = searchValue.value.trim()
+  if (!value) return {}
+
+  if (searchKey.value === 'order_id') return { order_id: value }
+  if (searchKey.value === 'customer') return { customer: value }
+  if (searchKey.value === 'phone') return { phone: value }
+  if (searchKey.value === 'sku') return { sku: value }
+  if (searchKey.value === 'thickness') return { thickness: value }
+  if (searchKey.value === 'priority') return { priority: value }
+  if (searchKey.value === 'is_round') return { round_product: value === 'true' }
+  if (searchKey.value === 'confirmed_date') return { confirmed_date: value }
+  if (searchKey.value === 'order_status') return { order_status: value }
+  if (searchKey.value === 'default_width_in_inches') {
+    return {
+      default_width_in_inches: value,
+      default_width_in_inches_operator: searchOperator.value,
+    }
+  }
+  if (searchKey.value === 'default_length_in_inches') {
+    return {
+      default_length_in_inches: value,
+      default_length_in_inches_operator: searchOperator.value,
+    }
+  }
+  return {}
+}
+
 const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number) => {
   let timeoutId: number | undefined
 
@@ -387,13 +494,45 @@ const applyFilters = async () => {
   await ordersStore.fetchOrders({
     page: filters.value.page,
     limit: filters.value.limit,
+    search_key: searchKey.value,
+    search_value: searchValue.value.trim() || undefined,
+    search_operator: searchOperator.value,
+    ...buildSearchFilters(),
+    ...buildOrderListAdvancedRequest(advancedFilters.value),
   })
   syncProductEdits()
+}
+
+const applySearch = async () => {
+  filters.value.page = 1
+  await applyFilters()
+}
+
+const clearFilters = async () => {
+  advancedFilters.value = createOrderListAdvancedFilters()
+  filters.value.page = 1
+  await applyFilters()
+}
+
+const clearSearch = async () => {
+  searchKey.value = 'order_id'
+  searchValue.value = ''
+  searchOperator.value = 'gte'
+  advancedFilters.value = createOrderListAdvancedFilters()
+  filters.value.page = 1
+  await applyFilters()
 }
 
 const changePage = async (page: number) => {
   if (page === filters.value.page) return
   filters.value.page = page
+  await applyFilters()
+}
+
+const changeLimit = async (limit: number) => {
+  if (limit === filters.value.limit) return
+  filters.value.limit = limit
+  filters.value.page = 1
   await applyFilters()
 }
 

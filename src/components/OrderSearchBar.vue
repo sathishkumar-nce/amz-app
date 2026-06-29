@@ -11,10 +11,12 @@
         <option value="is_round">Is Round</option>
         <option value="confirmed_date">Order Confirmed Date</option>
         <option value="order_status">Order Status</option>
+        <option value="default_width_in_inches">Default Width (in)</option>
+        <option value="default_length_in_inches">Default Length (in)</option>
       </select>
 
       <input
-        v-if="searchKey !== 'order_status' && searchKey !== 'confirmed_date' && searchKey !== 'priority' && searchKey !== 'is_round'"
+        v-if="searchKey !== 'order_status' && searchKey !== 'confirmed_date' && searchKey !== 'priority' && searchKey !== 'is_round' && searchKey !== 'default_width_in_inches' && searchKey !== 'default_length_in_inches'"
         :value="searchValue"
         type="text"
         class="search-input"
@@ -59,7 +61,7 @@
       </select>
 
       <select
-        v-else
+        v-else-if="searchKey === 'is_round'"
         :value="searchValue"
         class="search-input"
         @change="emit('update:searchValue', ($event.target as HTMLSelectElement).value)"
@@ -68,6 +70,32 @@
         <option value="true">true</option>
         <option value="false">false</option>
       </select>
+
+      <div
+        v-else
+        class="search-range-inline"
+      >
+        <select
+          :value="searchOperator"
+          class="search-input search-input--operator"
+          @change="emit('update:searchOperator', ($event.target as HTMLSelectElement).value as SearchOperator)"
+        >
+          <option value="gt">&gt;</option>
+          <option value="gte">&gt;=</option>
+          <option value="lt">&lt;</option>
+          <option value="lte">&lt;=</option>
+          <option value="eq">=</option>
+        </select>
+        <input
+          :value="searchValue"
+          type="number"
+          step="0.01"
+          class="search-input"
+          :placeholder="placeholder"
+          @input="emit('update:searchValue', ($event.target as HTMLInputElement).value)"
+          @keyup.enter="emit('search')"
+        />
+      </div>
 
       <button type="button" class="search-button" :disabled="loading" @click="emit('search')">
         {{ loading ? 'Searching...' : 'Search' }}
@@ -80,15 +108,19 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+type SearchOperator = 'gt' | 'gte' | 'lt' | 'lte' | 'eq'
+
 const props = defineProps<{
   searchKey: string
   searchValue: string
+  searchOperator?: SearchOperator
   loading?: boolean
 }>()
 
 const emit = defineEmits<{
   'update:searchKey': [value: string]
   'update:searchValue': [value: string]
+  'update:searchOperator': [value: SearchOperator]
   search: []
   clear: []
 }>()
@@ -99,6 +131,8 @@ const placeholder = computed(() => {
   if (props.searchKey === 'phone') return 'Enter phone number'
   if (props.searchKey === 'sku') return 'Enter SKU'
   if (props.searchKey === 'thickness') return 'Enter thickness'
+  if (props.searchKey === 'default_width_in_inches') return 'Width in'
+  if (props.searchKey === 'default_length_in_inches') return 'Length in'
   return 'Enter search value'
 })
 </script>
@@ -114,9 +148,17 @@ const placeholder = computed(() => {
 
 .search-grid {
   display: grid;
-  grid-template-columns: minmax(180px, 240px) minmax(220px, 1fr) auto auto;
-  gap: 0.75rem;
+  grid-template-columns: 190px minmax(220px, 320px) auto auto;
+  gap: 0.6rem;
   align-items: center;
+  justify-content: start;
+}
+
+.search-range-inline {
+  display: grid;
+  grid-template-columns: 78px minmax(140px, 1fr);
+  gap: 0.6rem;
+  min-width: 220px;
 }
 
 .search-input {
@@ -128,6 +170,12 @@ const placeholder = computed(() => {
   color: #0f172a;
   padding: 0.75rem 0.85rem;
   font: inherit;
+}
+
+.search-input--operator {
+  text-align: center;
+  padding-left: 0.55rem;
+  padding-right: 0.55rem;
 }
 
 .search-input:focus {

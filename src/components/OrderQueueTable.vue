@@ -26,7 +26,16 @@
         <input v-model="filters.customer" type="text" placeholder="Customer name" class="filter-input" />
         <input v-model="filters.mobile" type="text" placeholder="Mobile" class="filter-input" />
         <input v-model="filters.sku" type="text" placeholder="SKU or wildcard" class="filter-input" />
-        <input v-model="filters.quantity" type="number" min="0" step="0.01" placeholder="Quantity" class="filter-input" />
+        <div class="filter-inline">
+          <select v-model="filters.quantity_operator" class="filter-input filter-input--operator">
+            <option value="gt">&gt;</option>
+            <option value="gte">&gt;=</option>
+            <option value="lt">&lt;</option>
+            <option value="lte">&lt;=</option>
+            <option value="eq">=</option>
+          </select>
+          <input v-model="filters.quantity" type="number" min="0" step="0.01" placeholder="Quantity" class="filter-input" />
+        </div>
         <input v-model="filters.confirmed_date" type="date" class="filter-input" />
         <input v-model="filters.confirmed_date_from" type="date" class="filter-input" />
         <input v-model="filters.confirmed_date_to" type="date" class="filter-input" />
@@ -66,6 +75,12 @@
           :class="['filter-button', 'filter-button--ghost', { 'filter-button--active': filters.missing_customer_inputs }]"
         >
           {{ filters.missing_customer_inputs ? 'Missing custom fields only' : 'Show rows with no custom fields' }}
+        </button>
+        <button
+          @click="toggleHasCustomerInputs"
+          :class="['filter-button', 'filter-button--ghost', { 'filter-button--active': filters.has_customer_inputs }]"
+        >
+          {{ filters.has_customer_inputs ? 'Has custom fields only' : 'Show rows with custom fields' }}
         </button>
         <button @click="refresh" class="filter-button">Apply</button>
       </div>
@@ -132,6 +147,7 @@
         :limit="limit"
         item-label="orders"
         @change="changePage"
+        @limit-change="changeLimit"
       />
     </section>
   </div>
@@ -181,6 +197,7 @@ const filters = ref({
   customer: '',
   mobile: '',
   sku: '',
+  quantity_operator: 'gte' as 'gt' | 'gte' | 'lt' | 'lte' | 'eq',
   quantity: '',
   confirmed_date: '',
   confirmed_date_from: '',
@@ -191,6 +208,7 @@ const filters = ref({
   order_status: '',
   round_product: '',
   missing_customer_inputs: false,
+  has_customer_inputs: false,
   sort_by: 'date_confirmed',
   sort_dir: 'desc' as 'asc' | 'desc',
   date_from: '',
@@ -266,6 +284,7 @@ const buildRequestFilters = (): OrderFilters => {
     mobile: filters.value.mobile || undefined,
     sku: filters.value.sku || undefined,
     quantity: filters.value.quantity || undefined,
+    quantity_operator: filters.value.quantity ? filters.value.quantity_operator : undefined,
     confirmed_date: filters.value.confirmed_date || undefined,
     confirmed_date_from: filters.value.confirmed_date_from || undefined,
     confirmed_date_to: filters.value.confirmed_date_to || undefined,
@@ -275,6 +294,7 @@ const buildRequestFilters = (): OrderFilters => {
     order_status: filters.value.order_status || undefined,
     round_product: filters.value.round_product ? filters.value.round_product === 'true' : undefined,
     missing_customer_inputs: filters.value.missing_customer_inputs || undefined,
+    has_customer_inputs: filters.value.has_customer_inputs || undefined,
     page: filters.value.page || 1,
     limit: filters.value.limit || props.limit || 100,
   }
@@ -308,6 +328,14 @@ const refresh = () => {
 
 const toggleMissingCustomerInputs = () => {
   filters.value.missing_customer_inputs = !filters.value.missing_customer_inputs
+  if (filters.value.missing_customer_inputs) filters.value.has_customer_inputs = false
+  filters.value.page = 1
+  refresh()
+}
+
+const toggleHasCustomerInputs = () => {
+  filters.value.has_customer_inputs = !filters.value.has_customer_inputs
+  if (filters.value.has_customer_inputs) filters.value.missing_customer_inputs = false
   filters.value.page = 1
   refresh()
 }
@@ -315,6 +343,13 @@ const toggleMissingCustomerInputs = () => {
 const changePage = (page: number) => {
   if (page < 1 || page > props.totalPages || page === filters.value.page) return
   filters.value.page = page
+  refresh()
+}
+
+const changeLimit = (limit: number) => {
+  if (limit === filters.value.limit) return
+  filters.value.limit = limit
+  filters.value.page = 1
   refresh()
 }
 
@@ -330,6 +365,11 @@ const productMatchesMissingInputs = (product: NonNullable<Order['products']>[num
   product.customer_width_in_mm == null &&
   product.customer_length_in_mm == null &&
   !(product.corner_radius_and_notes || '').trim()
+
+const productHasCustomerInputs = (product: NonNullable<Order['products']>[number]) =>
+  product.customer_width_in_inches != null ||
+  product.customer_length_in_inches != null ||
+  Boolean((product.corner_radius_and_notes || '').trim())
 
 const getStatusValue = (order: Order) => {
   const products = getRelevantProducts(order)
@@ -388,6 +428,7 @@ const displayedRows = computed(() => {
     if (filters.value.round_product === 'true' && !products.some((product) => product.is_round)) return false
     if (filters.value.round_product === 'false' && products.some((product) => product.is_round)) return false
     if (filters.value.missing_customer_inputs && !products.some(productMatchesMissingInputs)) return false
+    if (filters.value.has_customer_inputs && !products.some(productHasCustomerInputs)) return false
     return true
   })
 
@@ -522,6 +563,18 @@ h1 {
   background: #ffffff;
   padding: 0 0.85rem;
   color: #0f172a;
+}
+
+.filter-inline {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  gap: 0.45rem;
+}
+
+.filter-input--operator {
+  text-align: center;
+  padding-left: 0.55rem;
+  padding-right: 0.55rem;
 }
 
 .filter-button,
