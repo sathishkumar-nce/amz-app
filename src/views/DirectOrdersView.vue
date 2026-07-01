@@ -11,6 +11,7 @@
 
       <div class="hero-actions">
         <router-link to="/direct-orders/new" class="btn btn-primary">Create Order</router-link>
+        <router-link to="/direct-orders/cnc-ops" class="btn btn-secondary">Direct CNC Ops</router-link>
       </div>
     </section>
 
@@ -59,81 +60,20 @@
       </article>
     </section>
 
-    <section class="filters-card">
-      <div class="filters-head">
-        <div>
-          <h2>Search and Filters</h2>
-          <p>Search by order ID, AWB, customer, mobile, or pincode. Add filters when you want a tighter queue.</p>
-        </div>
-        <div class="filters-head__actions">
-          <button @click="resetFilters" type="button" class="btn btn-ghost">Reset</button>
-          <button @click="applyFilters" :disabled="busy" type="button" class="btn btn-primary">Apply Filters</button>
-        </div>
-      </div>
+    <DirectOrderFilterBar
+      v-model="advancedFilters"
+      :loading="busy"
+      @apply="applyFilters"
+      @clear="clearFilters"
+    />
 
-      <div class="search-row">
-        <label class="field field--search">
-          <span>Universal Search</span>
-          <input
-            v-model.trim="filters.search"
-            type="text"
-            placeholder="Order ID, AWB, customer, mobile, pincode"
-            @keyup.enter="applyFilters"
-          />
-        </label>
-      </div>
-
-      <div class="filters-grid">
-        <label class="field">
-          <span>AWB</span>
-          <input v-model.trim="filters.awb" type="text" placeholder="Search AWB" @keyup.enter="applyFilters" />
-        </label>
-        <label class="field">
-          <span>Source</span>
-          <select v-model="filters.source">
-            <option value="">All sources</option>
-            <option v-for="source in sourceOptions" :key="source" :value="source">{{ source }}</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>Order Status</span>
-          <select v-model="filters.order_status">
-            <option value="">All statuses</option>
-            <option v-for="status in orderStatusOptions" :key="status" :value="status">{{ status }}</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>Payment Status</span>
-          <select v-model="filters.payment_status">
-            <option value="">All payments</option>
-            <option v-for="status in paymentStatusOptions" :key="status" :value="status">{{ status }}</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>Priority</span>
-          <select v-model="filters.priority">
-            <option value="">All priorities</option>
-            <option v-for="priority in priorityOptions" :key="priority" :value="priority">{{ priority.toUpperCase() }}</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>Date From</span>
-          <input v-model="filters.date_from" type="date" />
-        </label>
-        <label class="field">
-          <span>Date To</span>
-          <input v-model="filters.date_to" type="date" />
-        </label>
-        <label class="field field--compact">
-          <span>Rows</span>
-          <select v-model.number="filters.limit" @change="applyFilters">
-            <option :value="20">20</option>
-            <option :value="50">50</option>
-            <option :value="100">100</option>
-          </select>
-        </label>
-      </div>
-    </section>
+    <DirectOrderSearchBar
+      v-model:searchKey="searchKey"
+      v-model:searchValue="searchValue"
+      :loading="busy"
+      @search="applyFilters"
+      @clear="clearSearch"
+    />
 
     <section class="table-card">
       <div class="table-toolbar">
@@ -187,7 +127,7 @@
             </thead>
             <tbody>
               <template v-for="order in store.orders" :key="order.id">
-                <tr>
+                <tr :class="rowHighlightClass(order.order_status)">
                   <td class="check-col">
                     <input
                       :checked="selectedOrderIds.includes(order.order_id)"
@@ -262,7 +202,7 @@
                     </div>
                   </td>
                 </tr>
-                <tr class="item-summary-row">
+                <tr :class="['item-summary-row', rowHighlightClass(order.order_status)]">
                   <td class="check-col"></td>
                   <td colspan="7" class="item-summary-cell">
                     <div class="item-strip__header">
@@ -276,9 +216,10 @@
                       >
                         <span class="item-summary-index">#{{ index + 1 }}</span>
                         <strong class="item-summary-name">{{ shortenItemName(item.item) }}</strong>
-                        <span class="item-summary-inline"><strong>Dim:</strong> {{ item.dimension || 'NA' }}</span>
                         <span class="item-summary-inline"><strong>Thickness:</strong> {{ item.thickness || 'NA' }}</span>
                         <span class="item-summary-inline"><strong>Qty:</strong> {{ item.quantity || 1 }}</span>
+                        <span class="item-summary-inline"><strong>Size (in):</strong> {{ formatSize(item.customer_width_in_inches, item.customer_length_in_inches) }}</span>
+                        <span class="item-summary-inline"><strong>Size (mm):</strong> {{ formatSize(item.customer_width_in_mm, item.customer_length_in_mm) }}</span>
                         <span class="item-summary-inline item-summary-inline--remark"><strong>Remarks:</strong> {{ item.remark || 'No remarks added' }}</span>
                       </article>
                     </div>
@@ -306,9 +247,12 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import DirectOrderFilterBar from '@/components/DirectOrderFilterBar.vue'
+import DirectOrderSearchBar from '@/components/DirectOrderSearchBar.vue'
 import PaginationControls from '@/components/PaginationControls.vue'
 import { useDirectOrdersStore } from '@/stores/directOrders'
 import type { DirectOrderFilters } from '@/types'
+import { buildDirectOrderAdvancedRequest, createDirectOrderAdvancedFilters } from '@/utils/directOrderListFilters'
 
 const store = useDirectOrdersStore()
 
@@ -322,22 +266,17 @@ const exportRange = ref({
   date_from: '',
   date_to: '',
 })
+const advancedFilters = ref(createDirectOrderAdvancedFilters())
+const searchKey = ref('order_id')
+const searchValue = ref('')
 
 const filters = ref<DirectOrderFilters>({
-  search: '',
-  awb: '',
-  source: '',
-  order_status: '',
-  payment_status: '',
-  priority: '',
-  date_from: '',
-  date_to: '',
   page: 1,
   limit: 20,
 })
 
 const sourceOptions = ['website', 'phone', 'whatsapp', 'email', 'meta', 'other']
-const orderStatusOptions = ['confirmed', 'packed', 'on-hold', 'forwarded', 'cancelled', 'returned', 'other-issues']
+const orderStatusOptions = ['confirmed', 'manufactured', 'on-hold', 'forwarded', 'cancelled', 'returned', 'other-issues']
 const paymentStatusOptions = ['pending', 'paid-full', 'paid-advance', 'refunded']
 const priorityOptions = ['p1', 'p2', 'p3', 'p4']
 
@@ -383,6 +322,11 @@ const compactLocation = (city?: string | null, state?: string | null) => {
   return parts.length > 0 ? parts.join(', ') : 'Location pending'
 }
 
+const formatSize = (width?: number | null, length?: number | null) => {
+  if (width == null && length == null) return 'NA'
+  return `${width ?? '-'} x ${length ?? '-'}`
+}
+
 const shortenItemName = (value?: string | null) => {
   const text = (value || '').trim()
   if (!text) return 'Unnamed item'
@@ -392,7 +336,7 @@ const shortenItemName = (value?: string | null) => {
 const statusClass = (status: string) => {
   const classes: Record<string, string> = {
     confirmed: 'status-pill--confirmed',
-    packed: 'status-pill--packed',
+    manufactured: 'status-pill--packed',
     'on-hold': 'status-pill--on-hold',
     forwarded: 'status-pill--forwarded',
     cancelled: 'status-pill--cancelled',
@@ -400,6 +344,19 @@ const statusClass = (status: string) => {
     'other-issues': 'status-pill--other-issues',
   }
   return classes[status] || 'status-pill--other-issues'
+}
+
+const rowHighlightClass = (status: string) => {
+  const classes: Record<string, string> = {
+    confirmed: 'row-highlight--confirmed',
+    forwarded: 'row-highlight--forwarded',
+    manufactured: 'row-highlight--manufactured',
+    cancelled: 'row-highlight--cancelled',
+    'other-issues': 'row-highlight--other-issues',
+    returned: 'row-highlight--returned',
+    'on-hold': 'row-highlight--on-hold',
+  }
+  return classes[status] || ''
 }
 
 const priorityClass = (priority: string) => {
@@ -415,9 +372,28 @@ const priorityClass = (priority: string) => {
 const loadOrders = async () => {
   await store.fetchOrders({
     ...filters.value,
+    ...buildDirectOrderAdvancedRequest(advancedFilters.value),
+    ...buildSearchFilters(),
     page: filters.value.page || 1,
     limit: filters.value.limit || 20,
   })
+}
+
+const buildSearchFilters = (): Partial<DirectOrderFilters> => {
+  const value = searchValue.value.trim()
+  if (!value) return {}
+
+  if (searchKey.value === 'order_id') return { order_id: value }
+  if (searchKey.value === 'customer_name') return { customer_name: value }
+  if (searchKey.value === 'mobile') return { mobile: value }
+  if (searchKey.value === 'pincode') return { pincode: value }
+  if (searchKey.value === 'awb') return { awb: value }
+  if (searchKey.value === 'item') return { item: value }
+  if (searchKey.value === 'order_status') return { order_status: value }
+  if (searchKey.value === 'payment_status') return { payment_status: value }
+  if (searchKey.value === 'priority') return { priority: value }
+  if (searchKey.value === 'source') return { source: value }
+  return { search: value }
 }
 
 const applyFilters = async () => {
@@ -425,19 +401,27 @@ const applyFilters = async () => {
   await loadOrders()
 }
 
+const clearFilters = async () => {
+  advancedFilters.value = createDirectOrderAdvancedFilters()
+  filters.value.page = 1
+  await loadOrders()
+}
+
+const clearSearch = async () => {
+  searchKey.value = 'order_id'
+  searchValue.value = ''
+  filters.value.page = 1
+  await loadOrders()
+}
+
 const resetFilters = async () => {
   filters.value = {
-    search: '',
-    awb: '',
-    source: '',
-    order_status: '',
-    payment_status: '',
-    priority: '',
-    date_from: '',
-    date_to: '',
     page: 1,
     limit: 20,
   }
+  advancedFilters.value = createDirectOrderAdvancedFilters()
+  searchKey.value = 'order_id'
+  searchValue.value = ''
   await loadOrders()
 }
 
@@ -864,6 +848,62 @@ h2 {
   background: transparent;
 }
 
+.orders-table tbody tr.row-highlight--confirmed {
+  background: rgba(254, 249, 195, 0.5);
+}
+
+.orders-table tbody tr.row-highlight--forwarded {
+  background: rgba(219, 234, 254, 0.52);
+}
+
+.orders-table tbody tr.row-highlight--manufactured {
+  background: rgba(220, 252, 231, 0.5);
+}
+
+.orders-table tbody tr.row-highlight--cancelled {
+  background: rgba(254, 226, 226, 0.52);
+}
+
+.orders-table tbody tr.row-highlight--other-issues {
+  background: rgba(252, 231, 243, 0.56);
+}
+
+.orders-table tbody tr.row-highlight--returned {
+  background: rgba(255, 237, 213, 0.58);
+}
+
+.orders-table tbody tr.row-highlight--on-hold {
+  background: rgba(241, 245, 249, 0.88);
+}
+
+.orders-table tbody tr.row-highlight--confirmed:hover {
+  background: rgba(254, 240, 138, 0.58);
+}
+
+.orders-table tbody tr.row-highlight--forwarded:hover {
+  background: rgba(191, 219, 254, 0.58);
+}
+
+.orders-table tbody tr.row-highlight--manufactured:hover {
+  background: rgba(187, 247, 208, 0.58);
+}
+
+.orders-table tbody tr.row-highlight--cancelled:hover {
+  background: rgba(254, 202, 202, 0.6);
+}
+
+.orders-table tbody tr.row-highlight--other-issues:hover {
+  background: rgba(251, 207, 232, 0.62);
+}
+
+.orders-table tbody tr.row-highlight--returned:hover {
+  background: rgba(254, 215, 170, 0.62);
+}
+
+.orders-table tbody tr.row-highlight--on-hold:hover {
+  background: rgba(226, 232, 240, 0.92);
+}
+
 .check-col {
   width: 52px;
 }
@@ -1001,6 +1041,34 @@ h2 {
   padding-bottom: 0.7rem !important;
   background:
     linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(255, 255, 255, 0.98));
+}
+
+.item-summary-row.row-highlight--confirmed .item-summary-cell {
+  background: linear-gradient(180deg, rgba(254, 249, 195, 0.42), rgba(255, 255, 255, 0.92));
+}
+
+.item-summary-row.row-highlight--forwarded .item-summary-cell {
+  background: linear-gradient(180deg, rgba(219, 234, 254, 0.44), rgba(255, 255, 255, 0.92));
+}
+
+.item-summary-row.row-highlight--manufactured .item-summary-cell {
+  background: linear-gradient(180deg, rgba(220, 252, 231, 0.42), rgba(255, 255, 255, 0.92));
+}
+
+.item-summary-row.row-highlight--cancelled .item-summary-cell {
+  background: linear-gradient(180deg, rgba(254, 226, 226, 0.44), rgba(255, 255, 255, 0.92));
+}
+
+.item-summary-row.row-highlight--other-issues .item-summary-cell {
+  background: linear-gradient(180deg, rgba(252, 231, 243, 0.46), rgba(255, 255, 255, 0.92));
+}
+
+.item-summary-row.row-highlight--returned .item-summary-cell {
+  background: linear-gradient(180deg, rgba(255, 237, 213, 0.48), rgba(255, 255, 255, 0.92));
+}
+
+.item-summary-row.row-highlight--on-hold .item-summary-cell {
+  background: linear-gradient(180deg, rgba(241, 245, 249, 0.82), rgba(255, 255, 255, 0.94));
 }
 
 .item-strip__header {

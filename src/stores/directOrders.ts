@@ -5,6 +5,7 @@ import type {
   DirectOrder,
   DirectOrderFilters,
   CreateDirectOrderRequest,
+  DirectOrderPincodeLookupResponse,
   UpdateDirectOrderRequest,
 } from '@/types'
 
@@ -113,6 +114,10 @@ export const useDirectOrdersStore = defineStore('directOrders', () => {
     return response.order_id
   }
 
+  async function lookupPincode(pincode: string): Promise<DirectOrderPincodeLookupResponse> {
+    return directOrdersApi.lookupPincode(pincode)
+  }
+
   async function createDelhiveryForwardOrder(orderId: string) {
     loading.value = true
     try {
@@ -161,6 +166,7 @@ export const useDirectOrdersStore = defineStore('directOrders', () => {
     deleteOrder,
     exportCSV,
     fetchNextOrderId,
+    lookupPincode,
     createDelhiveryForwardOrder,
     createBulkDelhiveryForwardOrders
   }

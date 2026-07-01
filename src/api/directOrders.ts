@@ -4,7 +4,9 @@ import type {
   DirectOrderFilters, 
   DirectOrderListResponse,
   DirectOrderDelhiveryResponse,
+  DirectOrderExecutiveDashboardResponse,
   DirectOrderBulkForwardResponse,
+  DirectOrderPincodeLookupResponse,
   NextDirectOrderIdResponse,
   CreateDirectOrderRequest,
   UpdateDirectOrderRequest
@@ -36,6 +38,29 @@ export const directOrdersApi = {
     return response.data
   },
 
+  getExecutiveDashboard: async (filters: {
+    dateRange: string
+    fromDate?: string
+    toDate?: string
+    state?: string
+    city?: string
+    thickness?: string
+    orderStatus?: string
+  }): Promise<DirectOrderExecutiveDashboardResponse> => {
+    const response = await apiClient.get<DirectOrderExecutiveDashboardResponse>('/api/v1/direct-orders/dashboard/executive', {
+      params: {
+        date_range: filters.dateRange,
+        from_date: filters.fromDate,
+        to_date: filters.toDate,
+        state: filters.state,
+        city: filters.city,
+        thickness: filters.thickness,
+        order_status: filters.orderStatus,
+      },
+    })
+    return response.data
+  },
+
   search: async (filters: DirectOrderFilters = {}): Promise<DirectOrderListResponse> => {
     const response = await apiClient.get<DirectOrderListResponse>('/api/v1/direct-orders/search', { params: filters })
     return response.data
@@ -43,6 +68,13 @@ export const directOrdersApi = {
 
   getNextOrderId: async (): Promise<NextDirectOrderIdResponse> => {
     const response = await apiClient.get<NextDirectOrderIdResponse>('/api/v1/direct-orders/next-order-id')
+    return response.data
+  },
+
+  lookupPincode: async (pincode: string): Promise<DirectOrderPincodeLookupResponse> => {
+    const response = await apiClient.get<DirectOrderPincodeLookupResponse>('/api/v1/direct-orders/delhivery/pincode-lookup', {
+      params: { pincode },
+    })
     return response.data
   },
 

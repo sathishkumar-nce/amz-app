@@ -125,7 +125,9 @@ const navSections = computed(() => {
     {
       title: 'Direct',
       items: [
+        { to: '/direct-orders/dashboard', label: 'Direct Dashboard' },
         { to: '/direct-orders', label: 'Direct Orders' },
+        { to: '/direct-orders/cnc-ops', label: 'Direct CNC Ops' },
       ],
     },
     {
@@ -138,6 +140,7 @@ const navSections = computed(() => {
         { to: '/db-backups', label: 'DB Backups' },
         { to: '/shipping-date-filter-settings', label: 'Shipping Filter Settings' },
         { to: '/amazon-row-highlight-settings', label: 'Row Highlight Settings' },
+        { to: '/interakt-settings', label: 'Interakt Settings' },
       ],
     },
   ]

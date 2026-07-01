@@ -38,9 +38,9 @@
                 <option v-for="source in sourceOptions" :key="source" :value="source">{{ source }}</option>
               </select>
             </label>
-            <label>
-              <span>Order Status</span>
-              <select v-model="form.order_status" class="input-compact">
+              <label>
+                <span>Order Status</span>
+                <select v-model="form.order_status" class="input-compact">
                 <option v-for="status in orderStatusOptions" :key="status" :value="status">{{ status }}</option>
               </select>
             </label>
@@ -98,7 +98,8 @@
             </label>
             <label>
               <span>Pincode</span>
-              <input v-model.trim="form.pincode" placeholder="560001" class="input-compact" />
+              <input v-model.trim="form.pincode" placeholder="560001" class="input-compact" maxlength="6" inputmode="numeric" />
+              <small v-if="pincodeLookupMessage" :class="pincodeLookupClass">{{ pincodeLookupMessage }}</small>
             </label>
             <label>
               <span>Country</span>
@@ -108,6 +109,24 @@
               <span>Landmark</span>
               <input v-model.trim="form.landmark" placeholder="Near metro pillar 14" />
             </label>
+          </div>
+
+          <div v-if="pincodeLookupResult" class="lookup-card">
+            <div class="lookup-card__header">
+              <strong>Delhivery Address Suggestion</strong>
+              <span :class="['lookup-chip', pincodeLookupResult.serviceable ? 'lookup-chip--ok' : 'lookup-chip--warn']">
+                {{ pincodeLookupResult.serviceable ? 'Serviceable' : 'Check manually' }}
+              </span>
+            </div>
+            <p class="lookup-card__copy">
+              Auto-filled from pincode. You can keep these values or edit them before saving.
+            </p>
+            <div class="lookup-card__grid">
+              <div><span>District</span><strong>{{ pincodeLookupResult.district || 'Not returned' }}</strong></div>
+              <div><span>State</span><strong>{{ pincodeLookupResult.state || 'Not returned' }}</strong></div>
+              <div><span>Country</span><strong>{{ pincodeLookupResult.country || 'India' }}</strong></div>
+              <div><span>COD</span><strong>{{ pincodeLookupResult.cod ? 'Available' : 'Unavailable' }}</strong></div>
+            </div>
           </div>
         </section>
 
@@ -209,6 +228,22 @@
                 <input v-model.number="item.quantity" type="number" min="1" step="1" class="input-compact" />
               </label>
               <label>
+                <span>Customer Width (in)</span>
+                <input v-model.number="item.customer_width_in_inches" type="number" min="0" step="0.01" class="input-compact" />
+              </label>
+              <label>
+                <span>Customer Length (in)</span>
+                <input v-model.number="item.customer_length_in_inches" type="number" min="0" step="0.01" class="input-compact" />
+              </label>
+              <label>
+                <span>Customer Width (mm)</span>
+                <input v-model.number="item.customer_width_in_mm" type="number" min="0" step="0.01" class="input-compact" />
+              </label>
+              <label>
+                <span>Customer Length (mm)</span>
+                <input v-model.number="item.customer_length_in_mm" type="number" min="0" step="0.01" class="input-compact" />
+              </label>
+              <label>
                 <span>HSN Code</span>
                 <input v-model.trim="item.hsn" placeholder="39219091" class="input-compact" />
               </label>
@@ -233,16 +268,16 @@
                 <input v-model.number="item.tax_rate" type="number" min="0" step="0.01" placeholder="18" class="input-compact" />
               </label>
               <label>
-                <span>Dimension</span>
-                <input v-model.trim="item.dimension" placeholder="24 x 36 Inch" />
-              </label>
-              <label>
                 <span>Thickness</span>
                 <input v-model.trim="item.thickness" placeholder="1.5mm" />
               </label>
               <label class="label-span-2">
+                <span>Corner Radius and Notes</span>
+                <input v-model.trim="item.corner_radius_and_notes" placeholder="Rounded corners, cut notes, special handling" />
+              </label>
+              <label class="label-span-2">
                 <span>Remark</span>
-                <input v-model.trim="item.remark" placeholder="corner radius and notes" />
+                <input v-model.trim="item.remark" placeholder="" />
               </label>
             </div>
           </div>
@@ -285,10 +320,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDirectOrdersStore } from '@/stores/directOrders'
-import type { CreateDirectOrderRequest, DirectOrder, DirectOrderItem, UpdateDirectOrderRequest } from '@/types'
+import stateCodes from '@/data/stateCodes.json'
+import type { CreateDirectOrderRequest, DirectOrder, DirectOrderItem, DirectOrderPincodeLookupResponse, UpdateDirectOrderRequest } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -296,12 +332,18 @@ const store = useDirectOrdersStore()
 
 const isEdit = computed(() => typeof route.params.id === 'string' && route.params.id.length > 0)
 const submitting = ref(false)
+const pincodeLookupState = ref<'idle' | 'loading' | 'success' | 'error'>('idle')
+const pincodeLookupMessage = ref('')
+const pincodeLookupResult = ref<DirectOrderPincodeLookupResponse | null>(null)
+let pincodeLookupTimer: ReturnType<typeof setTimeout> | null = null
+let latestLookupRequest = 0
 
 const sourceOptions = ['website', 'phone', 'whatsapp', 'email', 'meta', 'amz-replacement', 'issue-replacement', 'other']
-const orderStatusOptions = ['confirmed', 'packed', 'on-hold', 'forwarded', 'cancelled', 'returned', 'other-issues']
+const orderStatusOptions = ['confirmed', 'manufactured', 'on-hold', 'forwarded', 'cancelled', 'returned', 'other-issues']
 const paymentStatusOptions = ['pending', 'paid-full', 'paid-advance', 'refunded']
 const priorityOptions = ['P1', 'P2', 'P3', 'P4']
 const courierTypeOptions = ['manual', 'delhivery', 'bluedart', 'dtdc', 'xpressbees', 'professional', 'st', 'franch xpress', 'other']
+const issueRequiredStatuses = new Set(['cancelled', 'on-hold', 'other-issues', 'returned'])
 
 type EditableItem = Omit<DirectOrderItem, 'id' | 'order_id' | 'updated_by'> & { order_id?: string }
 const blankItem = (): EditableItem => ({
@@ -311,11 +353,16 @@ const blankItem = (): EditableItem => ({
   thickness: '',
   weight: null,
   amount: null,
-  remark: 'corner radius and notes',
+  remark: '',
   sku: 'MRC-DIRECT-001',
   hsn: '39219091',
   unit_price: null,
   tax_rate: null,
+  customer_width_in_inches: null,
+  customer_length_in_inches: null,
+  customer_width_in_mm: null,
+  customer_length_in_mm: null,
+  corner_radius_and_notes: '',
 })
 
 const today = () => new Date().toISOString().slice(0, 10)
@@ -417,8 +464,16 @@ const hydrateForm = (order: DirectOrder) => {
     hsn: item.hsn || '',
     unit_price: item.unit_price ?? null,
     tax_rate: item.tax_rate ?? null,
+    customer_width_in_inches: item.customer_width_in_inches ?? null,
+    customer_length_in_inches: item.customer_length_in_inches ?? null,
+    customer_width_in_mm: item.customer_width_in_mm ?? null,
+    customer_length_in_mm: item.customer_length_in_mm ?? null,
+    corner_radius_and_notes: item.corner_radius_and_notes || '',
   })) : []
   syncCourierTypeSelection(form.courier_type)
+  pincodeLookupResult.value = null
+  pincodeLookupMessage.value = ''
+  pincodeLookupState.value = 'idle'
 }
 
 const cleanString = (value?: string | null) => {
@@ -428,6 +483,71 @@ const cleanString = (value?: string | null) => {
 
 const cleanNumber = (value?: number | null) => (typeof value === 'number' && !Number.isNaN(value) ? value : undefined)
 const onlyDigits = (value?: string | null) => (value || '').replace(/\D/g, '')
+const pincodeLookupClass = computed(() =>
+  pincodeLookupState.value === 'error' ? 'field-note field-note--error' : 'field-note',
+)
+
+const resolveStateName = (state?: string, stateCode?: string) => {
+  const explicitState = cleanString(state)
+  if (explicitState) {
+    return explicitState
+  }
+
+  const normalizedCode = cleanString(stateCode)?.toUpperCase()
+  if (!normalizedCode) {
+    return undefined
+  }
+
+  return stateCodes[normalizedCode as keyof typeof stateCodes]
+}
+
+const normalizePincodeLookupResult = (result: DirectOrderPincodeLookupResponse): DirectOrderPincodeLookupResponse => ({
+  ...result,
+  state: resolveStateName(result.state, result.state_code),
+  raw: result.raw?.map((candidate) => ({
+    ...candidate,
+    state: resolveStateName(candidate.state, candidate.state_code),
+  })),
+})
+
+const applyPincodeLookupResult = (result: DirectOrderPincodeLookupResponse) => {
+  form.city = result.city || form.city
+  form.state = result.state || form.state
+  form.country = result.country || form.country || 'India'
+}
+
+const resetPincodeLookupState = () => {
+  pincodeLookupState.value = 'idle'
+  pincodeLookupMessage.value = ''
+  pincodeLookupResult.value = null
+}
+
+const runPincodeLookup = async (pincode: string) => {
+  const requestId = ++latestLookupRequest
+  pincodeLookupState.value = 'loading'
+  pincodeLookupMessage.value = 'Looking up address from Delhivery...'
+
+  try {
+    const response = await store.lookupPincode(pincode)
+    if (requestId !== latestLookupRequest) {
+      return
+    }
+    const result = normalizePincodeLookupResult(response)
+    pincodeLookupResult.value = result
+    applyPincodeLookupResult(result)
+    pincodeLookupState.value = 'success'
+    pincodeLookupMessage.value = result.district
+      ? `Auto-filled city/state and found district ${result.district}.`
+      : 'Auto-filled city/state from Delhivery.'
+  } catch (error: any) {
+    if (requestId !== latestLookupRequest) {
+      return
+    }
+    pincodeLookupResult.value = null
+    pincodeLookupState.value = 'error'
+    pincodeLookupMessage.value = error.response?.data?.error || 'Unable to fetch address for this pincode.'
+  }
+}
 
 const resolveCourierType = () => {
   if (courierTypeSelection.value === 'custom') {
@@ -443,11 +563,16 @@ const hasMeaningfulItemData = (item: EditableItem) => {
       cleanString(item.sku) ||
       cleanString(item.dimension) ||
       cleanString(item.thickness) ||
+      cleanString(item.corner_radius_and_notes) ||
       cleanString(item.remark) ||
       cleanNumber(item.weight) !== undefined ||
       cleanNumber(item.amount) !== undefined ||
       cleanNumber(item.unit_price) !== undefined ||
-      cleanNumber(item.tax_rate) !== undefined,
+      cleanNumber(item.tax_rate) !== undefined ||
+      cleanNumber(item.customer_width_in_inches) !== undefined ||
+      cleanNumber(item.customer_length_in_inches) !== undefined ||
+      cleanNumber(item.customer_width_in_mm) !== undefined ||
+      cleanNumber(item.customer_length_in_mm) !== undefined,
   )
 }
 
@@ -499,8 +624,34 @@ const buildPayload = (): CreateDirectOrderRequest => ({
       hsn: cleanString(item.hsn),
       unit_price: cleanNumber(item.unit_price),
       tax_rate: cleanNumber(item.tax_rate),
+      customer_width_in_inches: cleanNumber(item.customer_width_in_inches),
+      customer_length_in_inches: cleanNumber(item.customer_length_in_inches),
+      customer_width_in_mm: cleanNumber(item.customer_width_in_mm),
+      customer_length_in_mm: cleanNumber(item.customer_length_in_mm),
+      corner_radius_and_notes: cleanString(item.corner_radius_and_notes),
     })),
 })
+
+const ensureIssuesForStatus = (payload: CreateDirectOrderRequest) => {
+  if (!payload.order_status || !issueRequiredStatuses.has(payload.order_status)) {
+    return payload
+  }
+
+  if (cleanString(payload.issues)) {
+    return payload
+  }
+
+  const entered = window.prompt(`Issues is required when order status is "${payload.order_status}". Enter the reason before saving:`)?.trim()
+  if (entered) {
+    form.issues = entered
+    return {
+      ...payload,
+      issues: entered,
+    }
+  }
+
+  throw new Error('Issues field is required for the selected order status.')
+}
 
 const validateBeforeSubmit = (payload: CreateDirectOrderRequest) => {
   const errors: string[] = []
@@ -534,8 +685,8 @@ const validateBeforeSubmit = (payload: CreateDirectOrderRequest) => {
     errors.push('Pincode must be exactly 6 digits.')
   }
 
-  if (payload.order_status === 'other-issues' && !cleanString(payload.issues)) {
-    errors.push('Issues field is required when order status is other-issues.')
+  if (payload.order_status && issueRequiredStatuses.has(payload.order_status) && !cleanString(payload.issues)) {
+    errors.push('Issues field is required when order status is cancelled, on-hold, other-issues, or returned.')
   }
 
   if ((payload.total_weight ?? 0) < 0) {
@@ -558,6 +709,18 @@ const validateBeforeSubmit = (payload: CreateDirectOrderRequest) => {
     }
     if ((item.tax_rate ?? 0) < 0) {
       errors.push(`Item ${itemNumber} tax rate cannot be negative.`)
+    }
+    if ((item.customer_width_in_inches ?? 0) < 0) {
+      errors.push(`Item ${itemNumber} customer width in inches cannot be negative.`)
+    }
+    if ((item.customer_length_in_inches ?? 0) < 0) {
+      errors.push(`Item ${itemNumber} customer length in inches cannot be negative.`)
+    }
+    if ((item.customer_width_in_mm ?? 0) < 0) {
+      errors.push(`Item ${itemNumber} customer width in mm cannot be negative.`)
+    }
+    if ((item.customer_length_in_mm ?? 0) < 0) {
+      errors.push(`Item ${itemNumber} customer length in mm cannot be negative.`)
     }
   })
 
@@ -584,7 +747,7 @@ const loadNextOrderId = async () => {
 const handleSubmit = async () => {
   submitting.value = true
   try {
-    const payload = buildPayload()
+    const payload = ensureIssuesForStatus(buildPayload())
     const validationErrors = validateBeforeSubmit(payload)
     if (validationErrors.length > 0) {
       alert(validationErrors.join('\n'))
@@ -607,6 +770,46 @@ const handleSubmit = async () => {
     submitting.value = false
   }
 }
+
+watch(
+  () => form.pincode,
+  (value) => {
+    const normalized = onlyDigits(value)
+    if (value !== normalized) {
+      form.pincode = normalized
+      return
+    }
+
+    if (pincodeLookupTimer) {
+      clearTimeout(pincodeLookupTimer)
+      pincodeLookupTimer = null
+    }
+
+    if (normalized.length === 0) {
+      latestLookupRequest++
+      resetPincodeLookupState()
+      return
+    }
+
+    if (normalized.length < 6) {
+      latestLookupRequest++
+      pincodeLookupResult.value = null
+      pincodeLookupState.value = 'idle'
+      pincodeLookupMessage.value = 'Enter all 6 digits to auto-fill location fields.'
+      return
+    }
+
+    pincodeLookupTimer = setTimeout(() => {
+      void runPincodeLookup(normalized)
+    }, 350)
+  },
+)
+
+onBeforeUnmount(() => {
+  if (pincodeLookupTimer) {
+    clearTimeout(pincodeLookupTimer)
+  }
+})
 
 onMounted(async () => {
   if (!isEdit.value) {
@@ -736,6 +939,16 @@ label span {
   font-weight: 800;
 }
 
+.field-note {
+  color: #0f766e;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.field-note--error {
+  color: #b91c1c;
+}
+
 input,
 select,
 textarea {
@@ -787,6 +1000,70 @@ textarea {
 
 .label-span-2 {
   grid-column: span 2;
+}
+
+.lookup-card {
+  margin-top: 0.3rem;
+  border-radius: 18px;
+  border: 1px solid rgba(15, 118, 110, 0.16);
+  background: linear-gradient(135deg, rgba(236, 253, 245, 0.9), rgba(239, 246, 255, 0.95));
+  padding: 0.9rem 1rem;
+}
+
+.lookup-card__header,
+.lookup-card__grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.lookup-card__header {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.lookup-card__copy {
+  margin: 0.45rem 0 0.8rem;
+  color: #475569;
+  font-size: 0.84rem;
+}
+
+.lookup-card__grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.lookup-card__grid span {
+  display: block;
+  color: #64748b;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.lookup-card__grid strong {
+  display: block;
+  margin-top: 0.2rem;
+  color: #0f172a;
+  font-size: 0.92rem;
+}
+
+.lookup-chip {
+  border-radius: 999px;
+  padding: 0.32rem 0.7rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.lookup-chip--ok {
+  background: rgba(15, 118, 110, 0.12);
+  color: #0f766e;
+}
+
+.lookup-chip--warn {
+  background: rgba(180, 83, 9, 0.12);
+  color: #b45309;
 }
 
 .item-card,
@@ -849,7 +1126,9 @@ textarea {
 
   .section-grid,
   .advanced-grid,
-  .inline-field {
+  .inline-field,
+  .lookup-card__header,
+  .lookup-card__grid {
     grid-template-columns: 1fr;
   }
 

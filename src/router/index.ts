@@ -117,6 +117,12 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/interakt-settings',
+      name: 'interakt-settings',
+      component: () => import('@/views/InteraktSettingsView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/orders/:id',
       name: 'order-detail',
       component: () => import('@/views/OrderDetailView.vue'),
@@ -129,9 +135,21 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/direct-orders/dashboard',
+      name: 'direct-order-dashboard',
+      component: () => import('@/views/DirectOrderExecutiveDashboardView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/direct-orders/new',
       name: 'direct-order-create',
       component: () => import('@/views/DirectOrderFormView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/direct-orders/cnc-ops',
+      name: 'direct-order-cnc-ops',
+      component: () => import('@/views/DirectOrderCncOpsView.vue'),
       meta: { requiresAuth: true }
     },
     {

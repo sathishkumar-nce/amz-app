@@ -274,6 +274,30 @@ export interface ExecutiveDashboardResponse {
   recent_activity: ExecutiveDashboardRecentActivityRow[]
 }
 
+export interface DirectOrderExecutiveDashboardSummary {
+  total_orders: number
+  manufactured_orders: number
+  other_issues_orders: number
+  cancelled_orders: number
+  on_hold_orders: number
+  average_per_day: number
+}
+
+export interface DirectOrderExecutiveDashboardResponse {
+  generated_at: string
+  date_range: string
+  range_start: string
+  range_end: string
+  available_states: string[]
+  available_cities: string[]
+  summary: DirectOrderExecutiveDashboardSummary
+  orders_trend: AnalyticsTimePoint[]
+  other_issues_trend: AnalyticsTimePoint[]
+  orders_by_state: AnalyticsChartSlice[]
+  orders_by_city: AnalyticsChartSlice[]
+  orders_by_thickness: AnalyticsChartSlice[]
+}
+
 export interface ReturnsDashboardSummary {
   total_orders: number
   returns_initiated: number
@@ -444,6 +468,13 @@ export interface ShippingDateFilterSetting {
 export interface ShippingDateFilterStateResponse {
   filters: ShippingDateFilterSetting[]
   active_filter_key: string
+}
+
+export interface InteraktSettings {
+  enabled: boolean
+  mode: 'test' | 'prod'
+  template_name: string
+  test_number: string
 }
 
 export interface AmazonRowHighlightRule {
@@ -627,6 +658,11 @@ export interface DirectOrderItem {
   hsn?: string | null
   unit_price?: number | null
   tax_rate?: number | null
+  customer_width_in_inches?: number | null
+  customer_length_in_inches?: number | null
+  customer_width_in_mm?: number | null
+  customer_length_in_mm?: number | null
+  corner_radius_and_notes?: string | null
 }
 
 export interface DirectOrder {
@@ -795,6 +831,31 @@ export interface DirectOrderBulkForwardResponse {
   failure_count: number
   successes: DirectOrderBulkForwardItem[]
   failures: DirectOrderBulkForwardItem[]
+}
+
+export interface DirectOrderPincodeLookupCandidate {
+  pincode: string
+  city?: string
+  district?: string
+  state?: string
+  state_code?: string
+  country?: string
+  serviceable: boolean
+  cod: boolean
+  prepaid: boolean
+}
+
+export interface DirectOrderPincodeLookupResponse {
+  pincode: string
+  city?: string
+  district?: string
+  state?: string
+  state_code?: string
+  country?: string
+  serviceable: boolean
+  cod: boolean
+  prepaid: boolean
+  raw?: DirectOrderPincodeLookupCandidate[]
 }
 
 export interface NextDirectOrderIdResponse {

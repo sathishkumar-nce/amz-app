@@ -91,6 +91,9 @@
               <p>HSN: {{ item.hsn || 'NA' }}</p>
               <p>Item Weight (g): {{ item.weight ?? 'NA' }}</p>
               <p>Amount: {{ formatCurrency(item.amount) }}</p>
+              <p>Customer Size (in): {{ formatSize(item.customer_width_in_inches, item.customer_length_in_inches) }}</p>
+              <p>Customer Size (mm): {{ formatSize(item.customer_width_in_mm, item.customer_length_in_mm) }}</p>
+              <p>Corner Radius and Notes: {{ item.corner_radius_and_notes || 'NA' }}</p>
               <p>Remark: {{ item.remark || 'NA' }}</p>
             </article>
           </div>
@@ -132,6 +135,7 @@ const dimensions = computed(() => {
 
 const formatCurrency = (value?: number | null) => value == null ? 'Not set' : `₹${value.toFixed(2)}`
 const formatDate = (value?: string | null) => value ? new Date(value).toLocaleDateString() : 'Not set'
+const formatSize = (width?: number | null, length?: number | null) => (width == null && length == null ? 'NA' : `${width ?? '-'} x ${length ?? '-'}`)
 
 const handleDelhiveryForwardOrder = async () => {
   if (!order.value) return
