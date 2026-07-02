@@ -43,6 +43,7 @@
                 <th>Order Status</th>
                 <th>Customer</th>
                 <th>Item</th>
+                <th>Thickness</th>
                 <th>Quantity</th>
                 <th>Customer Width (in)</th>
                 <th>Customer Length (in)</th>
@@ -66,6 +67,7 @@
                 </td>
                 <td class="cell-customer">{{ row.order.customer_name || 'Customer pending' }}</td>
                 <td class="cell-item">{{ row.item.item || 'Unnamed item' }}</td>
+                <td class="cell-thickness">{{ row.item.thickness || 'Not set' }}</td>
                 <td>{{ row.item.quantity }}</td>
                 <td class="cell-dimension">
                   <input v-model="row.itemEdit.customer_width_in_inches" type="number" step="0.01" class="sheet-input" />
@@ -624,25 +626,31 @@ h1 {
   line-height: 1.45;
 }
 
-.ops-table th:nth-child(8),
-.ops-table td:nth-child(8),
+.cell-thickness {
+  min-width: 7.5rem;
+}
+
 .ops-table th:nth-child(9),
-.ops-table td:nth-child(9) {
+.ops-table td:nth-child(9),
+.ops-table th:nth-child(10),
+.ops-table td:nth-child(10) {
   min-width: 10rem;
 }
 
-.ops-table th:nth-child(10),
-.ops-table td:nth-child(10) {
+.ops-table th:nth-child(11),
+.ops-table td:nth-child(11),
+.ops-table th:nth-child(12),
+.ops-table td:nth-child(12) {
   min-width: 11rem;
 }
 
-.ops-table th:nth-child(11),
-.ops-table td:nth-child(11) {
+.ops-table th:nth-child(13),
+.ops-table td:nth-child(13) {
   min-width: 20rem;
 }
 
-.ops-table th:nth-child(12),
-.ops-table td:nth-child(12) {
+.ops-table th:nth-child(14),
+.ops-table td:nth-child(14) {
   min-width: 10.5rem;
 }
 

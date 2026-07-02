@@ -227,22 +227,36 @@
                 <span>Quantity</span>
                 <input v-model.number="item.quantity" type="number" min="1" step="1" class="input-compact" />
               </label>
-              <label>
-                <span>Customer Width (in)</span>
-                <input v-model.number="item.customer_width_in_inches" type="number" min="0" step="0.01" class="input-compact" />
-              </label>
-              <label>
-                <span>Customer Length (in)</span>
-                <input v-model.number="item.customer_length_in_inches" type="number" min="0" step="0.01" class="input-compact" />
-              </label>
-              <label>
-                <span>Customer Width (mm)</span>
-                <input v-model.number="item.customer_width_in_mm" type="number" min="0" step="0.01" class="input-compact" />
-              </label>
-              <label>
-                <span>Customer Length (mm)</span>
-                <input v-model.number="item.customer_length_in_mm" type="number" min="0" step="0.01" class="input-compact" />
-              </label>
+              <div class="dimension-group label-span-2">
+                <div class="dimension-group__title">Customer Size Inputs</div>
+                <div class="dimension-group__grid">
+                  <label>
+                    <span>Customer Width (in)</span>
+                    <input v-model.number="item.customer_width_in_inches" type="number" min="0" step="0.01" class="input-compact" />
+                  </label>
+                  <label>
+                    <span>Customer Length (in)</span>
+                    <input v-model.number="item.customer_length_in_inches" type="number" min="0" step="0.01" class="input-compact" />
+                  </label>
+                  <label>
+                    <span>Thickness</span>
+                    <input v-model.trim="item.thickness" placeholder="1.5mm" />
+                  </label>
+                </div>
+              </div>
+              <div class="dimension-group dimension-group--mm label-span-2">
+                <div class="dimension-group__title dimension-group__title--mm">Customer Size In MM</div>
+                <div class="dimension-group__grid dimension-group__grid--mm">
+                  <label>
+                    <span>Customer Width (mm)</span>
+                    <input v-model.number="item.customer_width_in_mm" type="number" min="0" step="0.01" class="input-compact" />
+                  </label>
+                  <label>
+                    <span>Customer Length (mm)</span>
+                    <input v-model.number="item.customer_length_in_mm" type="number" min="0" step="0.01" class="input-compact" />
+                  </label>
+                </div>
+              </div>
               <label>
                 <span>HSN Code</span>
                 <input v-model.trim="item.hsn" placeholder="39219091" class="input-compact" />
@@ -267,17 +281,9 @@
                 <span>Tax Rate</span>
                 <input v-model.number="item.tax_rate" type="number" min="0" step="0.01" placeholder="18" class="input-compact" />
               </label>
-              <label>
-                <span>Thickness</span>
-                <input v-model.trim="item.thickness" placeholder="1.5mm" />
-              </label>
               <label class="label-span-2">
                 <span>Corner Radius and Notes</span>
                 <input v-model.trim="item.corner_radius_and_notes" placeholder="Rounded corners, cut notes, special handling" />
-              </label>
-              <label class="label-span-2">
-                <span>Remark</span>
-                <input v-model.trim="item.remark" placeholder="" />
               </label>
             </div>
           </div>
@@ -1002,6 +1008,43 @@ textarea {
   grid-column: span 2;
 }
 
+.dimension-group {
+  grid-column: span 2;
+  border-radius: 18px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.78);
+  padding: 0.9rem;
+}
+
+.dimension-group--mm {
+  border-color: rgba(220, 38, 38, 0.18);
+  background: rgba(254, 242, 242, 0.7);
+}
+
+.dimension-group__title {
+  margin: 0 0 0.75rem;
+  color: #0f766e;
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.dimension-group__title--mm {
+  color: #dc2626;
+}
+
+.dimension-group__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.8rem;
+  align-items: end;
+}
+
+.dimension-group__grid--mm {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .lookup-card {
   margin-top: 0.3rem;
   border-radius: 18px;
@@ -1127,6 +1170,7 @@ textarea {
   .section-grid,
   .advanced-grid,
   .inline-field,
+  .dimension-group__grid,
   .lookup-card__header,
   .lookup-card__grid {
     grid-template-columns: 1fr;

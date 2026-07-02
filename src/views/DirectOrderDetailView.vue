@@ -94,7 +94,6 @@
               <p>Customer Size (in): {{ formatSize(item.customer_width_in_inches, item.customer_length_in_inches) }}</p>
               <p>Customer Size (mm): {{ formatSize(item.customer_width_in_mm, item.customer_length_in_mm) }}</p>
               <p>Corner Radius and Notes: {{ item.corner_radius_and_notes || 'NA' }}</p>
-              <p>Remark: {{ item.remark || 'NA' }}</p>
             </article>
           </div>
         </section>

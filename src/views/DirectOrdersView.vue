@@ -218,9 +218,9 @@
                         <strong class="item-summary-name">{{ shortenItemName(item.item) }}</strong>
                         <span class="item-summary-inline"><strong>Thickness:</strong> {{ item.thickness || 'NA' }}</span>
                         <span class="item-summary-inline"><strong>Qty:</strong> {{ item.quantity || 1 }}</span>
-                        <span class="item-summary-inline"><strong>Size (in):</strong> {{ formatSize(item.customer_width_in_inches, item.customer_length_in_inches) }}</span>
-                        <span class="item-summary-inline"><strong>Size (mm):</strong> {{ formatSize(item.customer_width_in_mm, item.customer_length_in_mm) }}</span>
-                        <span class="item-summary-inline item-summary-inline--remark"><strong>Remarks:</strong> {{ item.remark || 'No remarks added' }}</span>
+                        <span class="item-summary-inline"><strong>Customer Width (in):</strong> {{ item.customer_width_in_inches ?? 'NA' }}</span>
+                        <span class="item-summary-inline"><strong>Customer Length (in):</strong> {{ item.customer_length_in_inches ?? 'NA' }}</span>
+                        <span class="item-summary-inline item-summary-inline--notes"><strong>Corner Radius and Notes:</strong> {{ item.corner_radius_and_notes || 'NA' }}</span>
                       </article>
                     </div>
                     <div v-else class="item-summary-empty">No items added yet.</div>
@@ -1155,7 +1155,7 @@ h2 {
   margin-right: 0.2rem;
 }
 
-.item-summary-inline--remark {
+.item-summary-inline--notes {
   flex: 1 1 260px;
   min-width: 220px;
 }
