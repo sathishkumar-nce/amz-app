@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, shallowRef } from 'vue'
 import { ordersApi } from '@/api/orders'
 import { useShippingDateFiltersStore } from './shippingDateFilters'
 import type { Order, OrderFilters, Issue, Return, SafetyClaimOrder } from '@/types'
@@ -12,11 +12,11 @@ export const useOrdersStore = defineStore('orders', () => {
     totalPages: 0
   })
 
-  const orders = ref<Order[]>([])
-  const currentOrder = ref<Order | null>(null)
-  const issues = ref<Issue[]>([])
-  const returns = ref<Return[]>([])
-  const safetyClaims = ref<SafetyClaimOrder[]>([])
+  const orders = shallowRef<Order[]>([])
+  const currentOrder = shallowRef<Order | null>(null)
+  const issues = shallowRef<Issue[]>([])
+  const returns = shallowRef<Return[]>([])
+  const safetyClaims = shallowRef<SafetyClaimOrder[]>([])
   const issueTotal = ref(0)
   const returnTotal = ref(0)
   const safetyClaimTotal = ref(0)
@@ -30,9 +30,16 @@ export const useOrdersStore = defineStore('orders', () => {
     if (!refreshed) return
 
     const syncList = (list: { value: Order[] }) => {
-      const index = list.value.findIndex((order) => order.amazon_order_id === amazonOrderId)
-      if (index !== -1) {
-        list.value[index] = refreshed
+      let changed = false
+      const next = list.value.map((order) => {
+        if (order.amazon_order_id !== amazonOrderId) {
+          return order
+        }
+        changed = true
+        return refreshed
+      })
+      if (changed) {
+        list.value = next
       }
     }
 

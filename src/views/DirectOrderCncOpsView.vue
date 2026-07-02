@@ -130,7 +130,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import DirectOrderFilterBar from '@/components/DirectOrderFilterBar.vue'
 import DirectOrderSearchBar from '@/components/DirectOrderSearchBar.vue'
 import PaginationControls from '@/components/PaginationControls.vue'
@@ -177,6 +177,8 @@ const itemEdits = reactive<Record<string, ItemEditRow>>({})
 const orderEdits = reactive<Record<string, OrderEditRow>>({})
 const savingRows = reactive<Record<string, boolean>>({})
 const rowFeedback = reactive<Record<string, string>>({})
+const AUTO_REFRESH_MS = 15000
+let autoRefreshTimer: ReturnType<typeof window.setInterval> | null = null
 
 const numberToString = (value?: number | null) => (value == null ? '' : String(value))
 const toOptionalNumber = (value?: string | null) => {
@@ -272,6 +274,15 @@ const loadOrders = async () => {
     page: filters.value.page || 1,
     limit: filters.value.limit || 100,
   })
+}
+
+const hasPendingRowSave = () => Object.values(savingRows).some(Boolean)
+
+const runAutoRefresh = async () => {
+  if (document.hidden || store.loading || hasPendingRowSave()) {
+    return
+  }
+  await loadOrders()
 }
 
 const buildSearchFilters = (): Partial<DirectOrderFilters> => {
@@ -395,6 +406,16 @@ const saveRow = async (row: VisibleRow) => {
 
 onMounted(async () => {
   await loadOrders()
+  autoRefreshTimer = window.setInterval(() => {
+    void runAutoRefresh()
+  }, AUTO_REFRESH_MS)
+})
+
+onBeforeUnmount(() => {
+  if (autoRefreshTimer != null) {
+    window.clearInterval(autoRefreshTimer)
+    autoRefreshTimer = null
+  }
 })
 </script>
 

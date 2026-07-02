@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, shallowRef } from 'vue'
 import { directOrdersApi } from '@/api/directOrders'
 import type {
   DirectOrder,
@@ -10,8 +10,8 @@ import type {
 } from '@/types'
 
 export const useDirectOrdersStore = defineStore('directOrders', () => {
-  const orders = ref<DirectOrder[]>([])
-  const currentOrder = ref<DirectOrder | null>(null)
+  const orders = shallowRef<DirectOrder[]>([])
+  const currentOrder = shallowRef<DirectOrder | null>(null)
   const loading = ref(false)
   const activeFilters = ref<DirectOrderFilters>({})
   const pagination = ref({
@@ -66,10 +66,7 @@ export const useDirectOrdersStore = defineStore('directOrders', () => {
     loading.value = true
     try {
       const updated = await directOrdersApi.update(orderId, data)
-      const index = orders.value.findIndex(o => o.order_id === orderId)
-      if (index !== -1) {
-        orders.value[index] = updated
-      }
+      orders.value = orders.value.map((order) => (order.order_id === orderId ? updated : order))
       if (currentOrder.value?.order_id === orderId) {
         currentOrder.value = updated
       }
@@ -123,10 +120,7 @@ export const useDirectOrdersStore = defineStore('directOrders', () => {
     try {
       const response = await directOrdersApi.createDelhiveryForwardOrder(orderId)
       const updated = response.order
-      const index = orders.value.findIndex(o => o.order_id === orderId)
-      if (index !== -1) {
-        orders.value[index] = updated
-      }
+      orders.value = orders.value.map((order) => (order.order_id === orderId ? updated : order))
       if (currentOrder.value?.order_id === orderId) {
         currentOrder.value = updated
       }

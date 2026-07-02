@@ -215,7 +215,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import ListUtilityBar from '@/components/ListUtilityBar.vue'
 import OrderListFilterBar from '@/components/OrderListFilterBar.vue'
 import OrderSearchBar from '@/components/OrderSearchBar.vue'
@@ -276,11 +276,13 @@ const searchKey = ref('order_id')
 const searchValue = ref('')
 const incrementSteps = [0, 0.25, 0.5, 0.75, 1]
 const SAVE_TIMEOUT_MS = 15000
+const AUTO_REFRESH_MS = 15000
 
 const productEdits = reactive<Record<string, ProductEditRow>>({})
 const orderEdits = reactive<Record<string, OrderEditRow>>({})
 const savingProducts = reactive<Record<string, boolean>>({})
 const productFeedback = reactive<Record<string, string>>({})
+let autoRefreshTimer: ReturnType<typeof window.setInterval> | null = null
 
 const sheetRows = computed<SheetRow[]>(() =>
   ordersStore.orders.flatMap((order) =>
@@ -446,6 +448,15 @@ const applyFilters = async () => {
   syncProductEdits()
 }
 
+const hasPendingProductSave = () => Object.values(savingProducts).some(Boolean)
+
+const runAutoRefresh = async () => {
+  if (document.hidden || ordersStore.loading || hasPendingProductSave()) {
+    return
+  }
+  await applyFilters()
+}
+
 const applySearch = async () => {
   filters.value.page = 1
   await applyFilters()
@@ -535,7 +546,17 @@ const saveProductRow = async (row: VisibleRow) => {
 
 onMounted(() => {
   void rowHighlightRulesStore.ensureLoaded()
-  applyFilters()
+  void applyFilters()
+  autoRefreshTimer = window.setInterval(() => {
+    void runAutoRefresh()
+  }, AUTO_REFRESH_MS)
+})
+
+onBeforeUnmount(() => {
+  if (autoRefreshTimer != null) {
+    window.clearInterval(autoRefreshTimer)
+    autoRefreshTimer = null
+  }
 })
 </script>
 
