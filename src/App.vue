@@ -70,7 +70,7 @@
         </header>
 
         <main class="page-shell">
-          <router-view :key="viewKey" />
+          <router-view />
         </main>
       </div>
     </template>
@@ -94,7 +94,6 @@ const rowHighlightRulesStore = useAmazonRowHighlightRulesStore()
 const router = useRouter()
 const route = useRoute()
 const sidebarOpen = ref(false)
-const viewKey = computed(() => `${route.fullPath}:${shippingFilterStore.activeKey}`)
 
 const handleUnauthorized = () => {
   authStore.logout()
