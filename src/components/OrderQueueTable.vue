@@ -54,6 +54,11 @@
           <option value="true">Round only</option>
           <option value="false">Non-round only</option>
         </select>
+        <select v-model="filters.customer_inputs_mode" class="filter-input">
+          <option value="">All inputs</option>
+          <option value="no_custom_inputs">No custom inputs</option>
+          <option value="has_customer_inputs">Has custom inputs</option>
+        </select>
         <input v-model="filters.date_from" type="date" class="filter-input" />
         <input v-model="filters.date_to" type="date" class="filter-input" />
         <select v-model="filters.sort_by" class="filter-input">
@@ -70,18 +75,6 @@
           <option value="desc">Desc</option>
           <option value="asc">Asc</option>
         </select>
-        <button
-          @click="toggleMissingCustomerInputs"
-          :class="['filter-button', 'filter-button--ghost', { 'filter-button--active': filters.missing_customer_inputs }]"
-        >
-          {{ filters.missing_customer_inputs ? 'Missing custom fields only' : 'Show rows with no custom fields' }}
-        </button>
-        <button
-          @click="toggleHasCustomerInputs"
-          :class="['filter-button', 'filter-button--ghost', { 'filter-button--active': filters.has_customer_inputs }]"
-        >
-          {{ filters.has_customer_inputs ? 'Has custom fields only' : 'Show rows with custom fields' }}
-        </button>
         <button @click="refresh" class="filter-button">Apply</button>
       </div>
     </section>
@@ -207,8 +200,7 @@ const filters = ref({
   priority: '',
   order_status: '',
   round_product: '',
-  missing_customer_inputs: false,
-  has_customer_inputs: false,
+  customer_inputs_mode: '' as '' | 'has_customer_inputs' | 'no_custom_inputs',
   sort_by: 'date_confirmed',
   sort_dir: 'desc' as 'asc' | 'desc',
   date_from: '',
@@ -293,8 +285,8 @@ const buildRequestFilters = (): OrderFilters => {
     priority: filters.value.priority || undefined,
     order_status: filters.value.order_status || undefined,
     round_product: filters.value.round_product ? filters.value.round_product === 'true' : undefined,
-    missing_customer_inputs: filters.value.missing_customer_inputs || undefined,
-    has_customer_inputs: filters.value.has_customer_inputs || undefined,
+    missing_customer_inputs: filters.value.customer_inputs_mode === 'no_custom_inputs' ? true : undefined,
+    has_customer_inputs: filters.value.customer_inputs_mode === 'has_customer_inputs' ? true : undefined,
     page: filters.value.page || 1,
     limit: filters.value.limit || props.limit || 100,
   }
@@ -324,20 +316,6 @@ const applyPreset = (preset: PresetValue) => {
 
 const refresh = () => {
   emit('fetch', buildRequestFilters())
-}
-
-const toggleMissingCustomerInputs = () => {
-  filters.value.missing_customer_inputs = !filters.value.missing_customer_inputs
-  if (filters.value.missing_customer_inputs) filters.value.has_customer_inputs = false
-  filters.value.page = 1
-  refresh()
-}
-
-const toggleHasCustomerInputs = () => {
-  filters.value.has_customer_inputs = !filters.value.has_customer_inputs
-  if (filters.value.has_customer_inputs) filters.value.missing_customer_inputs = false
-  filters.value.page = 1
-  refresh()
 }
 
 const changePage = (page: number) => {
@@ -427,8 +405,8 @@ const displayedRows = computed(() => {
     const products = getRelevantProducts(order)
     if (filters.value.round_product === 'true' && !products.some((product) => product.is_round)) return false
     if (filters.value.round_product === 'false' && products.some((product) => product.is_round)) return false
-    if (filters.value.missing_customer_inputs && !products.some(productMatchesMissingInputs)) return false
-    if (filters.value.has_customer_inputs && !products.some(productHasCustomerInputs)) return false
+    if (filters.value.customer_inputs_mode === 'no_custom_inputs' && !products.some(productMatchesMissingInputs)) return false
+    if (filters.value.customer_inputs_mode === 'has_customer_inputs' && !products.some(productHasCustomerInputs)) return false
     return true
   })
 

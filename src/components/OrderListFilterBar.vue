@@ -192,19 +192,18 @@
         <strong>{{ modelValue.is_round ? 'Yes' : 'No' }}</strong>
       </label>
 
-      <label class="filter-field filter-field--toggle">
-        <span>Has custom inputs</span>
-        <input
-          :checked="modelValue.has_customer_inputs"
-          type="checkbox"
-          class="toggle-input"
+      <label class="filter-field">
+        <span>Custom inputs</span>
+        <select
+          :value="modelValue.customer_inputs_mode"
+          class="filter-input"
           :disabled="loading"
-          @change="updateField('has_customer_inputs', ($event.target as HTMLInputElement).checked)"
-        />
-        <span class="toggle-control" aria-hidden="true">
-          <span class="toggle-knob"></span>
-        </span>
-        <strong>{{ modelValue.has_customer_inputs ? 'Yes' : 'No' }}</strong>
+          @change="updateField('customer_inputs_mode', ($event.target as HTMLSelectElement).value as OrderListAdvancedFilters['customer_inputs_mode'])"
+        >
+          <option value="">All inputs</option>
+          <option value="no_custom_inputs">No custom inputs</option>
+          <option value="has_customer_inputs">Has custom inputs</option>
+        </select>
       </label>
     </div>
 

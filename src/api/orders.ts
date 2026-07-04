@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { DashboardAnalytics, ExecutiveDashboardResponse, Order, OrderFilters, OrderListResponse, RepeatCustomerResponse, ReturnsDashboardResponse, SafetyClaimsDashboardResponse, UpdateManualFieldsRequest, UpdateProductManualFieldsRequest, Issue, Return, SafetyClaimOrder } from '@/types'
+import type { DashboardAnalytics, ExecutiveDashboardResponse, Order, OrderFilters, OrderListResponse, OrdersByIDsResponse, RepeatCustomerResponse, ReturnsDashboardResponse, SafetyClaimsDashboardResponse, UpdateManualFieldsRequest, UpdateProductManualFieldsRequest, Issue, Return, SafetyClaimOrder } from '@/types'
 import { normalizeOrder, normalizeOrderListResponse } from '@/utils/orderData'
 
 export const ordersApi = {
@@ -21,6 +21,19 @@ export const ordersApi = {
   getById: async (amazonOrderId: string): Promise<Order> => {
     const response = await apiClient.get<Order>(`/api/v1/orders/${amazonOrderId}`)
     return normalizeOrder(response.data)
+  },
+
+  getByIDs: async (amazonOrderIds: string[]): Promise<OrdersByIDsResponse> => {
+    const response = await apiClient.post<OrdersByIDsResponse>('/api/v1/orders/by-ids', {
+      amazon_order_ids: amazonOrderIds,
+    })
+    return {
+      results: response.data.results.map((result) => ({
+        ...result,
+        order: result.order ? normalizeOrder(result.order) : null,
+      })),
+      missing_amazon_order_ids: response.data.missing_amazon_order_ids,
+    }
   },
 
   updateManualFields: async (amazonOrderId: string, data: UpdateManualFieldsRequest): Promise<Order> => {

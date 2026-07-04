@@ -45,6 +45,12 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/cnc-operator/pdf-sequence',
+      name: 'cnc-operator-pdf-sequence',
+      component: () => import('@/views/PdfOrderedCncOpsView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/order-confirmation',
       name: 'order-confirmation',
       component: () => import('@/views/OrderConfirmationView.vue'),

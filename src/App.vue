@@ -133,6 +133,7 @@ const navSections = computed(() => {
       title: 'Tools',
       items: [
         { to: '/cnc-operator', label: 'CNC Ops' },
+        { to: '/cnc-operator/pdf-sequence', label: 'PDF CNC Ops' },
         { to: '/schedule-weight-parser', label: 'Schedule Weights' },
         { to: '/sku-mapper', label: 'SKU Mapper' },
         { to: '/priority-rules', label: 'Priority Rules' },

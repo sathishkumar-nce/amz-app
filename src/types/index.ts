@@ -187,6 +187,17 @@ export interface OrderListResponse {
   total_pages: number
 }
 
+export interface OrderedAmazonOrderResult {
+  requested_amazon_order_id: string
+  found: boolean
+  order?: Order | null
+}
+
+export interface OrdersByIDsResponse {
+  results: OrderedAmazonOrderResult[]
+  missing_amazon_order_ids: string[]
+}
+
 export interface AnalyticsPeriodStat {
   key: string
   label: string

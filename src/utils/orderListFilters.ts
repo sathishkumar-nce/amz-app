@@ -8,7 +8,7 @@ export interface OrderListAdvancedFilters {
   priority: string
   order_status: string
   is_round: boolean
-  has_customer_inputs: boolean
+  customer_inputs_mode: '' | 'has_customer_inputs' | 'no_custom_inputs'
   quantity_operator: 'gt' | 'gte' | 'lt' | 'lte' | 'eq'
   quantity: string
   default_width_in_inches_operator: 'gt' | 'gte' | 'lt' | 'lte' | 'eq'
@@ -25,7 +25,7 @@ export const createOrderListAdvancedFilters = (): OrderListAdvancedFilters => ({
   priority: '',
   order_status: '',
   is_round: false,
-  has_customer_inputs: false,
+  customer_inputs_mode: '',
   quantity_operator: 'gte',
   quantity: '',
   default_width_in_inches_operator: 'gte',
@@ -60,7 +60,8 @@ export const buildOrderListAdvancedRequest = (
     priority: toOptionalString(filters.priority),
     order_status: toOptionalString(filters.order_status),
     is_round: filters.is_round ? true : undefined,
-    has_customer_inputs: filters.has_customer_inputs ? true : undefined,
+    has_customer_inputs: filters.customer_inputs_mode === 'has_customer_inputs' ? true : undefined,
+    missing_customer_inputs: filters.customer_inputs_mode === 'no_custom_inputs' ? true : undefined,
     quantity,
     quantity_operator: quantity ? filters.quantity_operator : undefined,
     default_width_in_inches: defaultWidth,
