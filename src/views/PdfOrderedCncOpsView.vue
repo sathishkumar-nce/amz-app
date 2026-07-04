@@ -104,9 +104,15 @@
       </div>
       <div class="sequence-list">
         <article v-for="summary in fileSummaries" :key="summary.fileKey" class="sequence-item">
-          <h3>{{ summary.fileName }}</h3>
-          <p class="sequence-item__meta">{{ summary.totalIds }} IDs</p>
-          <p class="sequence-item__ids">{{ summary.orderIds.join(', ') }}</p>
+          <div class="sequence-item__head">
+            <h3>{{ summary.fileName }}</h3>
+            <p class="sequence-item__meta">{{ summary.totalIds }} IDs</p>
+          </div>
+          <div class="sequence-item__ids">
+            <span v-for="orderId in summary.orderIds" :key="`${summary.fileKey}-${orderId}`" class="sequence-id-pill">
+              {{ orderId }}
+            </span>
+          </div>
         </article>
       </div>
     </section>
@@ -157,23 +163,23 @@
             <tbody>
               <tr v-for="row in visibleRows" :key="row.rowKey" :style="getRowStyle(row)">
                 <td class="cell-pdf">{{ row.source.fileName }}</td>
-                <td>{{ row.source.pageNumber }}</td>
+                <td class="cell-page">{{ row.source.pageNumber }}</td>
                 <td class="cell-order">
                   <div class="order-id-line">{{ row.order.amazon_order_id }}</div>
                   <div class="order-subline">BL #{{ row.order.baselinker_order_id }}</div>
                 </td>
-                <td>{{ formatDate(row.order.date_confirmed || row.order.date_add) }}</td>
+                <td class="cell-date">{{ formatDate(row.order.date_confirmed || row.order.date_add) }}</td>
                 <td class="cell-product">
                   <div class="product-title">{{ row.product.name || 'Unnamed product' }}</div>
                 </td>
                 <td class="cell-quantity">{{ formatNumber(row.product.quantity) }}</td>
-                <td>{{ row.product.thickness || 'Not set' }}</td>
-                <td><span class="status-pill">{{ row.product.is_round ? 'Yes' : 'No' }}</span></td>
-                <td>{{ row.product.sku || 'Not set' }}</td>
-                <td>{{ formatNumber(row.product.default_width_in_inches) }}</td>
-                <td>{{ formatNumber(row.product.default_length_in_inches) }}</td>
-                <td>{{ formatNumber(row.product.default_width_in_mm) }}</td>
-                <td>{{ formatNumber(row.product.default_length_in_mm) }}</td>
+                <td class="cell-thickness">{{ row.product.thickness || 'Not set' }}</td>
+                <td class="cell-round"><span class="status-pill">{{ row.product.is_round ? 'Yes' : 'No' }}</span></td>
+                <td class="cell-sku">{{ row.product.sku || 'Not set' }}</td>
+                <td class="cell-metric">{{ formatNumber(row.product.default_width_in_inches) }}</td>
+                <td class="cell-metric">{{ formatNumber(row.product.default_length_in_inches) }}</td>
+                <td class="cell-metric">{{ formatNumber(row.product.default_width_in_mm) }}</td>
+                <td class="cell-metric">{{ formatNumber(row.product.default_length_in_mm) }}</td>
 
                 <td class="cell-input-group">
                   <input
@@ -251,8 +257,8 @@
                     <option value="returned">returned</option>
                   </select>
                 </td>
-                <td>{{ formatText(row.order.delivery_fullname || row.order.user_login) }}</td>
-                <td>{{ formatText(row.order.delivery_city) }}</td>
+                <td class="cell-customer">{{ formatText(row.order.delivery_fullname || row.order.user_login) }}</td>
+                <td class="cell-city">{{ formatText(row.order.delivery_city) }}</td>
                 <td class="cell-actions">
                   <button
                     type="button"
@@ -1080,17 +1086,41 @@ h1 {
   border: 1px solid rgba(148, 163, 184, 0.35);
   background: #f8fafc;
   padding: 0.95rem 1rem;
+  display: grid;
+  gap: 0.8rem;
 }
 
-.sequence-item__meta,
-.sequence-item__ids {
-  margin: 0.4rem 0 0;
+.sequence-item__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.sequence-item__meta {
+  margin: 0;
   color: #475569;
+  font-weight: 700;
 }
 
 .sequence-item__ids {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.sequence-id-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.42rem 0.68rem;
+  background: #ffffff;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  color: #334155;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
   font-weight: 700;
-  word-break: break-word;
 }
 
 .empty-state {
@@ -1106,32 +1136,31 @@ h1 {
 
 .cnc-sheet {
   width: 100%;
-  min-width: 1900px;
+  min-width: 2320px;
   border-collapse: separate;
   border-spacing: 0;
-}
-
-.cnc-sheet th,
-.cnc-sheet td {
-  padding: 0.85rem 0.8rem;
-  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
-  text-align: left;
-  vertical-align: top;
 }
 
 .cnc-sheet th {
   position: sticky;
   top: 0;
-  background: #eff6ff;
-  color: #0f172a;
-  font-size: 0.83rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
   z-index: 1;
+  padding: 0.85rem 0.7rem;
+  text-align: left;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #0f766e;
+  background: #f8fafc;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.25);
 }
 
-.cnc-sheet tbody tr {
-  background: var(--row-highlight-background, #ffffff);
+.cnc-sheet td {
+  padding: 0.85rem 0.7rem;
+  vertical-align: top;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.85);
+  color: #0f172a;
+  background: var(--row-highlight-background, rgba(255, 255, 255, 0.9));
 }
 
 .order-id-line,
@@ -1147,11 +1176,80 @@ h1 {
   font-size: 0.85rem;
 }
 
+.cell-pdf {
+  min-width: 11rem;
+}
+
+.cell-page,
+.cell-quantity,
+.cell-round,
+.cell-metric {
+  text-align: center;
+}
+
+.cell-page {
+  width: 4.5rem;
+}
+
+.cell-date {
+  min-width: 9rem;
+}
+
+.cell-order {
+  min-width: 16rem;
+}
+
+.cell-product {
+  min-width: 18rem;
+}
+
+.product-title {
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.cell-thickness {
+  min-width: 5.5rem;
+  white-space: nowrap;
+}
+
+.cell-sku {
+  min-width: 6.5rem;
+}
+
+.cell-metric {
+  min-width: 4.9rem;
+}
+
 .cell-input-group,
 .cell-mm,
 .cell-notes,
 .cell-actions {
   min-width: 160px;
+}
+
+.cell-input-group {
+  min-width: 14rem;
+}
+
+.cell-mm {
+  min-width: 10rem;
+}
+
+.cell-notes {
+  min-width: 18rem;
+}
+
+.cell-status-edit {
+  min-width: 170px;
+}
+
+.cell-customer {
+  min-width: 10rem;
+}
+
+.cell-city {
+  min-width: 8rem;
 }
 
 .sheet-input,
@@ -1170,6 +1268,10 @@ h1 {
   resize: vertical;
 }
 
+.sheet-input--mm {
+  min-width: 8.75rem;
+}
+
 .increment-row {
   display: flex;
   flex-wrap: wrap;
@@ -1180,8 +1282,8 @@ h1 {
 .increment-button {
   border: 0;
   border-radius: 999px;
-  padding: 0.35rem 0.55rem;
-  font-size: 0.75rem;
+  padding: 0.28rem 0.55rem;
+  font-size: 0.73rem;
   font-weight: 800;
   background: #dbeafe;
   color: #1d4ed8;
@@ -1191,6 +1293,18 @@ h1 {
 .cell-actions {
   display: grid;
   gap: 0.45rem;
+  min-width: 9rem;
+}
+
+.save-button,
+.view-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 2.7rem;
+  border-radius: 14px;
+  font-weight: 800;
 }
 
 @media (max-width: 900px) {
@@ -1210,6 +1324,10 @@ h1 {
 
   .result-grid {
     grid-template-columns: 1fr;
+  }
+
+  .sequence-item__head {
+    align-items: flex-start;
   }
 }
 </style>
