@@ -83,7 +83,7 @@
             </div>
           </div>
 
-          <div class="table-wrap">
+          <div ref="tableWrapRef" class="table-wrap">
             <table class="result-table">
               <thead>
                 <tr>
@@ -111,6 +111,7 @@
               </tbody>
             </table>
           </div>
+          <StickyHorizontalScrollbar :target="tableWrapRef" always-visible />
         </div>
       </article>
     </section>
@@ -119,10 +120,12 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import StickyHorizontalScrollbar from '@/components/StickyHorizontalScrollbar.vue'
 import { skuMapperApi } from '@/api/skuMapper'
 import type { ScheduleWeightParseResponse } from '@/types'
 
 const rawText = ref('')
+const tableWrapRef = ref<HTMLElement | null>(null)
 const parsing = ref(false)
 const errorMessage = ref('')
 const result = ref<ScheduleWeightParseResponse | null>(null)

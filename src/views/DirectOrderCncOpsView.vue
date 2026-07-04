@@ -34,12 +34,45 @@
       <div v-else-if="rows.length === 0" class="empty-state">No direct-order CNC rows found.</div>
 
       <template v-else>
-        <div class="table-wrap">
+        <div class="bulk-toolbar">
+          <label class="bulk-toolbar__select-all">
+            <input
+              :checked="allVisibleRowsSelected"
+              type="checkbox"
+              @change="toggleVisibleRowsSelection(($event.target as HTMLInputElement).checked)"
+            />
+            <span>Select visible rows</span>
+          </label>
+          <span class="bulk-toolbar__count">{{ selectedVisibleRowCount }} selected</span>
+          <select v-model="bulkOrderStatus" class="sheet-input bulk-toolbar__status">
+            <option value="">Bulk order status</option>
+            <option v-for="status in orderStatusOptions" :key="status" :value="status">{{ status }}</option>
+          </select>
+          <button
+            type="button"
+            class="btn btn-primary"
+            :disabled="bulkSaving || !bulkOrderStatus || selectedVisibleRowCount === 0"
+            @click="applyBulkStatusUpdate"
+          >
+            {{ bulkSaving ? 'Updating...' : 'Update Selected Status' }}
+          </button>
+          <span v-if="bulkFeedback" class="bulk-toolbar__feedback">{{ bulkFeedback }}</span>
+        </div>
+
+        <div ref="tableWrapRef" class="table-wrap">
           <table class="ops-table">
             <thead>
               <tr>
+                <th class="cell-check">
+                  <input
+                    :checked="allVisibleRowsSelected"
+                    type="checkbox"
+                    @change="toggleVisibleRowsSelection(($event.target as HTMLInputElement).checked)"
+                  />
+                </th>
                 <th>Order ID</th>
                 <th>Date</th>
+                <th>Updated At</th>
                 <th>Order Status</th>
                 <th>Customer</th>
                 <th>Item</th>
@@ -55,11 +88,19 @@
             </thead>
             <tbody>
               <tr v-for="row in rows" :key="row.rowKey" :class="rowHighlightClass(row.orderEdit.order_status)">
+                <td class="cell-check">
+                  <input
+                    :checked="isRowSelected(row.rowKey)"
+                    type="checkbox"
+                    @change="setRowSelected(row.rowKey, ($event.target as HTMLInputElement).checked)"
+                  />
+                </td>
                 <td>
                   <div class="cell-title">{{ row.order.order_id }}</div>
                   <div class="cell-subtitle">{{ row.order.mobile || 'No mobile' }}</div>
                 </td>
                 <td>{{ formatDate(row.order.created_at) }}</td>
+                <td>{{ formatDate(row.order.updated_at) }}</td>
                 <td class="cell-status">
                   <select v-model="row.orderEdit.order_status" class="sheet-input">
                     <option v-for="status in orderStatusOptions" :key="status" :value="status">{{ status }}</option>
@@ -97,8 +138,22 @@
                     </button>
                   </div>
                 </td>
-                <td><input v-model="row.itemEdit.customer_width_in_mm" type="number" step="0.01" class="sheet-input" /></td>
-                <td><input v-model="row.itemEdit.customer_length_in_mm" type="number" step="0.01" class="sheet-input" /></td>
+                <td class="cell-dimension">
+                  <input v-model="row.itemEdit.customer_width_in_mm" type="number" step="0.01" class="sheet-input" />
+                  <div class="increment-row">
+                    <button type="button" class="increment-button increment-button--indicator" disabled>
+                      {{ formatInchDifference(row.itemEdit, 'customer_width_in_inches') }}
+                    </button>
+                  </div>
+                </td>
+                <td class="cell-dimension">
+                  <input v-model="row.itemEdit.customer_length_in_mm" type="number" step="0.01" class="sheet-input" />
+                  <div class="increment-row">
+                    <button type="button" class="increment-button increment-button--indicator" disabled>
+                      {{ formatInchDifference(row.itemEdit, 'customer_length_in_inches') }}
+                    </button>
+                  </div>
+                </td>
                 <td class="cell-notes">
                   <input v-model="row.itemEdit.corner_radius_and_notes" type="text" class="sheet-input" />
                 </td>
@@ -114,6 +169,7 @@
             </tbody>
           </table>
         </div>
+        <StickyHorizontalScrollbar :target="tableWrapRef" always-visible />
 
         <PaginationControls
           :page="store.pagination.page"
@@ -130,10 +186,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import DirectOrderFilterBar from '@/components/DirectOrderFilterBar.vue'
 import DirectOrderSearchBar from '@/components/DirectOrderSearchBar.vue'
 import PaginationControls from '@/components/PaginationControls.vue'
+import StickyHorizontalScrollbar from '@/components/StickyHorizontalScrollbar.vue'
 import { useDirectOrdersStore } from '@/stores/directOrders'
 import type { DirectOrder, DirectOrderFilters, DirectOrderItem, UpdateDirectOrderRequest } from '@/types'
 import { buildDirectOrderAdvancedRequest, createDirectOrderAdvancedFilters } from '@/utils/directOrderListFilters'
@@ -161,7 +218,7 @@ type VisibleRow = {
 }
 
 const store = useDirectOrdersStore()
-const incrementSteps = [0, 0.25, 0.5, 0.75, 1]
+const incrementSteps = [0, 0.1, 0.2, 0.25, 0.5, 0.75, 1]
 const issueRequiredStatuses = new Set(['cancelled', 'on-hold', 'other-issues', 'returned'])
 const orderStatusOptions = ['confirmed', 'manufactured', 'on-hold', 'forwarded', 'cancelled', 'returned', 'other-issues']
 const advancedFilters = ref(createDirectOrderAdvancedFilters())
@@ -177,6 +234,11 @@ const itemEdits = reactive<Record<string, ItemEditRow>>({})
 const orderEdits = reactive<Record<string, OrderEditRow>>({})
 const savingRows = reactive<Record<string, boolean>>({})
 const rowFeedback = reactive<Record<string, string>>({})
+const selectedRows = reactive<Record<string, boolean>>({})
+const bulkOrderStatus = ref('')
+const bulkSaving = ref(false)
+const bulkFeedback = ref('')
+const tableWrapRef = ref<HTMLElement | null>(null)
 const numberToString = (value?: number | null) => (value == null ? '' : String(value))
 const toOptionalNumber = (value?: string | null) => {
   if (!value?.trim()) return undefined
@@ -229,6 +291,35 @@ const rows = computed<VisibleRow[]>(() =>
   ),
 )
 
+const selectedVisibleRows = computed(() => rows.value.filter((row) => Boolean(selectedRows[row.rowKey])))
+const selectedVisibleRowCount = computed(() => selectedVisibleRows.value.length)
+const allVisibleRowsSelected = computed(() => rows.value.length > 0 && selectedVisibleRows.value.length === rows.value.length)
+
+const isRowSelected = (rowKey: string) => Boolean(selectedRows[rowKey])
+
+const setRowSelected = (rowKey: string, checked: boolean) => {
+  if (checked) {
+    selectedRows[rowKey] = true
+    return
+  }
+  delete selectedRows[rowKey]
+}
+
+const toggleVisibleRowsSelection = (checked: boolean) => {
+  for (const row of rows.value) {
+    setRowSelected(row.rowKey, checked)
+  }
+}
+
+const pruneRowSelection = (allowedRowKeys: string[]) => {
+  const allowed = new Set(allowedRowKeys)
+  for (const rowKey of Object.keys(selectedRows)) {
+    if (!allowed.has(rowKey)) {
+      delete selectedRows[rowKey]
+    }
+  }
+}
+
 const formatDate = (value?: string | null) => {
   if (!value) return 'Date pending'
   const parsed = new Date(value)
@@ -259,8 +350,37 @@ const applyInchIncrement = (
   const mmField = field === 'customer_width_in_inches' ? 'customer_width_in_mm' : 'customer_length_in_mm'
   const currentInches = Number(edit[field] || 0)
   const nextInches = currentInches + delta
-  edit[field] = roundToTwo(nextInches)
   edit[mmField] = roundToTwo(nextInches * 25.4)
+}
+
+const formatInchDifference = (
+  edit: ItemEditRow,
+  field: 'customer_width_in_inches' | 'customer_length_in_inches',
+) => {
+  const mmField = field === 'customer_width_in_inches' ? 'customer_width_in_mm' : 'customer_length_in_mm'
+  const mmValue = edit[mmField]
+
+  if (!mmValue || Number.isNaN(Number(mmValue))) {
+    return '+0.00 in'
+  }
+
+  const inches = Number(edit[field] || 0)
+  const delta = Number(mmValue) / 25.4 - (Number.isFinite(inches) ? inches : 0)
+  const normalized = Math.abs(delta) < 0.005 ? 0 : Math.round(delta * 100) / 100
+  const sign = normalized >= 0 ? '+' : '-'
+  return `${sign}${Math.abs(normalized).toFixed(2)} in`
+}
+
+const resolveBulkIssues = (status: string) => {
+  if (!issueRequiredStatuses.has(status)) {
+    return undefined
+  }
+
+  const entered = window.prompt(`Issues is required when order status is "${status}". Enter one reason to apply to all selected orders:`)?.trim()
+  if (!entered) {
+    throw new Error('Issues field is required for the selected order status.')
+  }
+  return entered
 }
 
 const loadOrders = async () => {
@@ -392,6 +512,41 @@ const saveRow = async (row: VisibleRow) => {
   }
 }
 
+const applyBulkStatusUpdate = async () => {
+  if (!bulkOrderStatus.value || selectedVisibleRows.value.length === 0) return
+
+  bulkSaving.value = true
+  bulkFeedback.value = ''
+
+  try {
+    const issues = resolveBulkIssues(bulkOrderStatus.value)
+    const selectedRowCount = selectedVisibleRows.value.length
+    const uniqueOrderIds = [...new Set(selectedVisibleRows.value.map((row) => row.order.order_id))]
+
+    for (const orderId of uniqueOrderIds) {
+      const updated = await store.updateOrder(orderId, {
+        order_status: bulkOrderStatus.value,
+        issues,
+      })
+      orderEdits[orderId] = buildOrderEdit(updated)
+    }
+
+    bulkFeedback.value = `Updated ${selectedRowCount} selected rows across ${uniqueOrderIds.length} orders`
+  } catch (error: any) {
+    bulkFeedback.value = error.response?.data?.error || error.message || 'Bulk update failed'
+  } finally {
+    bulkSaving.value = false
+  }
+}
+
+watch(
+  () => rows.value.map((row) => row.rowKey),
+  (rowKeys) => {
+    pruneRowSelection(rowKeys)
+  },
+  { immediate: true },
+)
+
 onMounted(async () => {
   await loadOrders()
 })
@@ -466,6 +621,35 @@ h1 {
   padding: 1rem;
 }
 
+.bulk-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.9rem;
+}
+
+.bulk-toolbar__select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.bulk-toolbar__count,
+.bulk-toolbar__feedback {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #475569;
+}
+
+.sheet-input.bulk-toolbar__status {
+  flex: 0 0 clamp(11.5rem, 16vw, 13.5rem);
+  width: clamp(11.5rem, 16vw, 13.5rem);
+  max-width: 100%;
+}
+
 .filters-card {
   display: grid;
   grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr)) auto;
@@ -509,6 +693,7 @@ h1 {
 
 .table-wrap {
   overflow: auto;
+  padding-bottom: 0.35rem;
 }
 
 .ops-table {
@@ -516,6 +701,12 @@ h1 {
   min-width: 1920px;
   border-collapse: separate;
   border-spacing: 0;
+}
+
+.cell-check {
+  width: 3.4rem;
+  min-width: 3.4rem;
+  text-align: center;
 }
 
 .ops-table th,
@@ -688,6 +879,18 @@ h1 {
   font-size: 0.74rem;
 }
 
+.increment-button--indicator {
+  min-width: 5.75rem;
+  justify-content: center;
+  background: #e2e8f0;
+  color: #334155;
+  cursor: default;
+}
+
+.increment-button--indicator:disabled {
+  opacity: 1;
+}
+
 .btn {
   min-height: 2.7rem;
   padding: 0 0.95rem;
@@ -740,6 +943,15 @@ h1 {
 
   .filters-card {
     grid-template-columns: 1fr;
+  }
+
+  .bulk-toolbar {
+    align-items: stretch;
+  }
+
+  .sheet-input.bulk-toolbar__status,
+  .btn.btn-primary {
+    width: 100%;
   }
 }
 </style>

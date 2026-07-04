@@ -84,6 +84,7 @@ export interface OrderProduct {
   is_round?: boolean
   is_discount_line: boolean
   updated_by?: string | null
+  updated_at?: string | null
 }
 
 export interface Order {
@@ -196,6 +197,17 @@ export interface OrderedAmazonOrderResult {
 export interface OrdersByIDsResponse {
   results: OrderedAmazonOrderResult[]
   missing_amazon_order_ids: string[]
+}
+
+export interface ChangedAmazonOrderResult {
+  amazon_order_id: string
+  order?: Order | null
+}
+
+export interface ChangedOrdersByIDsResponse {
+  changed_orders: ChangedAmazonOrderResult[]
+  missing_amazon_order_ids: string[]
+  server_time: string
 }
 
 export interface AnalyticsPeriodStat {

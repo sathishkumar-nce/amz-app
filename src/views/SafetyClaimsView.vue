@@ -55,7 +55,7 @@
           helper-text="Update safety claim details inline, then save each row."
         />
 
-        <div class="sheet-wrap">
+        <div ref="sheetWrapRef" class="sheet-wrap">
           <table class="safety-sheet">
             <thead>
               <tr>
@@ -136,6 +136,7 @@
             </tbody>
           </table>
         </div>
+        <StickyHorizontalScrollbar :target="sheetWrapRef" always-visible />
       </template>
 
       <PaginationControls
@@ -158,6 +159,7 @@ import OrderListFilterBar from '@/components/OrderListFilterBar.vue'
 import OrderSearchBar from '@/components/OrderSearchBar.vue'
 import PaginationControls from '@/components/PaginationControls.vue'
 import SortableHeader from '@/components/SortableHeader.vue'
+import StickyHorizontalScrollbar from '@/components/StickyHorizontalScrollbar.vue'
 import { useAmazonRowHighlightRulesStore } from '@/stores/amazonRowHighlightRules'
 import { useOrdersStore } from '@/stores/orders'
 import type { Order, OrderProduct, UpdateManualFieldsRequest, UpdateProductManualFieldsRequest } from '@/types'
@@ -208,6 +210,7 @@ const productEdits = reactive<Record<string, ProductEditRow>>({})
 const orderEdits = reactive<Record<string, OrderEditRow>>({})
 const savingRows = reactive<Record<string, boolean>>({})
 const rowFeedback = reactive<Record<string, string>>({})
+const sheetWrapRef = ref<HTMLElement | null>(null)
 
 const productKey = (amazonOrderId: string, orderProductId: number) => `${amazonOrderId}:${orderProductId}`
 

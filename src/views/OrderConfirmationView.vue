@@ -43,7 +43,7 @@
           editable
           helper-text="Priority and customer fields can be updated inline"
         />
-        <div class="sheet-wrap">
+        <div ref="sheetWrapRef" class="sheet-wrap">
           <table class="confirm-sheet">
           <thead>
             <tr>
@@ -149,6 +149,7 @@
           </tbody>
           </table>
         </div>
+        <StickyHorizontalScrollbar :target="sheetWrapRef" always-visible />
       </template>
 
       <PaginationControls
@@ -171,6 +172,7 @@ import OrderListFilterBar from '@/components/OrderListFilterBar.vue'
 import OrderSearchBar from '@/components/OrderSearchBar.vue'
 import PaginationControls from '@/components/PaginationControls.vue'
 import SortableHeader from '@/components/SortableHeader.vue'
+import StickyHorizontalScrollbar from '@/components/StickyHorizontalScrollbar.vue'
 import { useAmazonRowHighlightRulesStore } from '@/stores/amazonRowHighlightRules'
 import { useOrdersStore } from '@/stores/orders'
 import type { Order, OrderProduct, UpdateManualFieldsRequest, UpdateProductManualFieldsRequest } from '@/types'
@@ -216,6 +218,7 @@ const SAVE_TIMEOUT_MS = 15000
 const rowEdits = reactive<Record<string, ConfirmationRowEdit>>({})
 const savingRows = reactive<Record<string, boolean>>({})
 const rowFeedback = reactive<Record<string, string>>({})
+const sheetWrapRef = ref<HTMLElement | null>(null)
 
 const sheetRows = computed<SheetRow[]>(() =>
   ordersStore.orders.flatMap((order) =>
@@ -597,8 +600,6 @@ h1 {
 
 .confirm-shell {
   padding: 0.8rem;
-  content-visibility: auto;
-  contain-intrinsic-size: 820px;
 }
 
 .sheet-wrap {

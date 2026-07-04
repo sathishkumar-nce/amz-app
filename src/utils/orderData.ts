@@ -113,6 +113,7 @@ function normalizeProduct(product: unknown): OrderProduct {
     safety_claim_notes: (normalized.safety_claim_notes as string | null | undefined) ?? null,
     is_round: Boolean(normalized.is_round),
     is_discount_line: Boolean(normalized.is_discount_line),
+    updated_at: (normalized.updated_at as string | null | undefined) ?? null,
   }
 }
 

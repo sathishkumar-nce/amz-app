@@ -174,7 +174,7 @@
         <div v-for="index in 7" :key="`row-skeleton-${index}`" class="skeleton skeleton--row" />
       </div>
       <div v-else-if="!sortedRecentActivity.length" class="panel-empty">No Data Available</div>
-      <div v-else class="activity-table-wrap">
+      <div v-else ref="activityTableWrapRef" class="activity-table-wrap">
         <table class="activity-table">
           <thead>
             <tr>
@@ -202,6 +202,7 @@
           </tbody>
         </table>
       </div>
+      <StickyHorizontalScrollbar :target="activityTableWrapRef" always-visible />
     </section>
 
     <div v-if="error" class="error-banner">{{ error }}</div>
@@ -210,6 +211,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import StickyHorizontalScrollbar from '@/components/StickyHorizontalScrollbar.vue'
 import {
   ArrowPathIcon,
   ArrowUturnLeftIcon,
@@ -241,6 +243,7 @@ type SortKey =
   | 'updated_at'
 
 const dashboard = ref<ExecutiveDashboardResponse | null>(null)
+const activityTableWrapRef = ref<HTMLElement | null>(null)
 const loading = ref(false)
 const error = ref('')
 const sortKey = ref<SortKey>('updated_at')

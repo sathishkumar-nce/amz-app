@@ -1,5 +1,12 @@
 <template>
   <div class="cnc-page">
+    <div v-if="remoteUpdateToasts.length" class="toast-stack" aria-live="polite" aria-atomic="true">
+      <article v-for="toast in remoteUpdateToasts" :key="toast.id" class="update-toast">
+        <strong>{{ toast.orderId }}</strong>
+        <span>{{ toast.message }}</span>
+      </article>
+    </div>
+
     <section class="cnc-hero">
       <div>
         <p class="eyebrow">PDF driven CNC queue</p>
@@ -9,9 +16,28 @@
         </p>
       </div>
       <div class="cnc-hero__summary">
-        <span class="summary-pill">{{ extractedEntries.length }} IDs extracted</span>
+        <span class="summary-pill">{{ queuedOrderIdCount }} IDs queued</span>
+        <span class="summary-pill">{{ extractedEntries.length }} active IDs</span>
         <span class="summary-pill">{{ visibleRows.length }} product rows</span>
+        <span class="summary-pill">{{ redundantOrderEntries.length }} redundant removed</span>
         <span class="summary-pill">{{ missingOrderIds.length }} missing orders</span>
+      </div>
+    </section>
+
+    <section v-if="remoteUpdateLog.length" class="update-log-card">
+      <div class="update-log-card__header">
+        <h2>Live Update Log</h2>
+        <p>Every toast is copied here so operators can review past remote updates without losing the history.</p>
+        <span class="summary-pill">{{ remoteUpdateLog.length }} updates</span>
+      </div>
+      <div class="update-log-list">
+        <article v-for="log in remoteUpdateLog" :key="`log-${log.id}`" class="update-log-item">
+          <div class="update-log-item__meta">
+            <strong>{{ log.orderId }}</strong>
+            <span>{{ formatDateTime(log.createdAt) }}</span>
+          </div>
+          <p>{{ log.message }}</p>
+        </article>
       </div>
     </section>
 
@@ -32,10 +58,14 @@
           />
           {{ loadingPdf ? 'Reading PDFs...' : 'Upload PDFs' }}
         </label>
-        <button type="button" class="secondary-button" :disabled="loadingPdf" @click="clearUploadedPdfs">Clear</button>
+        <button type="button" class="secondary-button" :disabled="loadingPdf || !extractedEntries.length" @click="clearUploadedPdfs">
+          Clear Queue
+        </button>
       </div>
       <p v-if="uploadError" class="upload-message upload-message--error">{{ uploadError }}</p>
-      <p v-else-if="missingOrderIds.length" class="upload-message upload-message--warning">
+      <p v-if="uploadWarning" class="upload-message upload-message--warning">{{ uploadWarning }}</p>
+      <p v-if="redundantQueueWarning" class="upload-message upload-message--warning">{{ redundantQueueWarning }}</p>
+      <p v-if="missingOrderIds.length" class="upload-message upload-message--warning">
         Missing orders in system: {{ missingOrderIds.join(', ') }}
       </p>
     </section>
@@ -47,8 +77,16 @@
       </div>
       <div class="result-grid">
         <article class="result-stat result-stat--neutral">
-          <span class="result-stat__label">Extracted from PDF</span>
+          <span class="result-stat__label">Queued from PDFs</span>
+          <strong class="result-stat__value">{{ queuedOrderIdCount }}</strong>
+        </article>
+        <article class="result-stat result-stat--success">
+          <span class="result-stat__label">Active Unique IDs</span>
           <strong class="result-stat__value">{{ extractedOrderIdCount }}</strong>
+        </article>
+        <article class="result-stat result-stat--warning">
+          <span class="result-stat__label">Redundant Removed</span>
+          <strong class="result-stat__value">{{ redundantOrderEntries.length }}</strong>
         </article>
         <article class="result-stat result-stat--success">
           <span class="result-stat__label">Available in DB</span>
@@ -61,13 +99,26 @@
       </div>
     </section>
 
-    <section v-if="uploadedFileNames.length" class="active-files-card">
-      <div class="active-files-card__header">
+    <section v-if="fileSummaries.length" class="active-files-card">
+      <div class="active-files-card__header active-files-card__header--actions">
         <h2>Active PDF Files</h2>
         <p>These uploaded PDFs are the source for the currently displayed CNC order list.</p>
+        <button type="button" class="secondary-button" :disabled="loadingPdf" @click="clearUploadedPdfs">Clear Queue</button>
       </div>
       <div class="active-files-list">
-        <span v-for="fileName in uploadedFileNames" :key="fileName" class="active-file-pill">{{ fileName }}</span>
+        <article v-for="summary in fileSummaries" :key="summary.fileKey" class="active-file-card">
+          <div class="active-file-card__copy">
+            <strong>{{ summary.fileName }}</strong>
+            <span>
+              {{ summary.activeIds }} active
+              <template v-if="summary.redundantIds">, {{ summary.redundantIds }} redundant removed</template>
+              , {{ summary.totalIds }} total extracted
+            </span>
+          </div>
+          <button type="button" class="secondary-button active-file-card__remove" :disabled="loadingPdf" @click="removeQueuedFile(summary.fileKey)">
+            Remove
+          </button>
+        </article>
       </div>
     </section>
 
@@ -81,6 +132,26 @@
       </div>
     </section>
 
+    <section v-if="redundantOrderEntries.length" class="redundant-orders-card">
+      <div class="redundant-orders-card__header">
+        <h2>Removed Redundant Order IDs</h2>
+        <p>These order IDs were repeated in later PDFs. The first occurrence stays in the CNC list and the later duplicates are removed.</p>
+      </div>
+      <div class="redundant-orders-list">
+        <article v-for="entry in redundantOrderEntries" :key="entry.removedEntryKey" class="redundant-order-card">
+          <strong class="redundant-order-card__id">{{ entry.amazonOrderId }}</strong>
+          <span class="redundant-order-card__meta" :title="`Removed from ${entry.removedFileName} (page ${entry.removedPageNumber})`">
+            <span class="redundant-order-card__tag">Removed</span>
+            <span class="redundant-order-card__text">{{ entry.removedFileName }} · p{{ entry.removedPageNumber }}</span>
+          </span>
+          <span class="redundant-order-card__meta" :title="`Kept from ${entry.keptFileName} (page ${entry.keptPageNumber})`">
+            <span class="redundant-order-card__tag redundant-order-card__tag--kept">Kept</span>
+            <span class="redundant-order-card__text">{{ entry.keptFileName }} · p{{ entry.keptPageNumber }}</span>
+          </span>
+        </article>
+      </div>
+    </section>
+
     <section v-if="fileSummaries.length" class="sequence-card">
       <div class="sequence-card__header">
         <h2>Extracted Sequence</h2>
@@ -88,15 +159,11 @@
       </div>
       <div class="sequence-list">
         <article v-for="summary in fileSummaries" :key="summary.fileKey" class="sequence-item">
-          <div class="sequence-item__head">
-            <h3>{{ summary.fileName }}</h3>
-            <p class="sequence-item__meta">{{ summary.totalIds }} IDs</p>
-          </div>
-          <div class="sequence-item__ids">
-            <span v-for="orderId in summary.orderIds" :key="`${summary.fileKey}-${orderId}`" class="sequence-id-pill">
-              {{ orderId }}
-            </span>
-          </div>
+          <strong class="sequence-item__file" :title="summary.fileName">{{ summary.fileName }}</strong>
+          <p class="sequence-item__meta">{{ summary.totalIds }} IDs</p>
+          <p class="sequence-item__line" :title="summary.orderIds.join(' -> ')">
+            {{ summary.orderIds.join(' -> ') }}
+          </p>
         </article>
       </div>
     </section>
@@ -104,10 +171,47 @@
     <section class="cnc-shell">
       <div v-if="loadingPdf" class="empty-state">Reading PDFs and loading matching Amazon orders...</div>
       <div v-else-if="!extractedEntries.length" class="empty-state">Upload PDFs to build a CNC queue from their order sequence.</div>
-      <div v-else-if="visibleRows.length === 0" class="empty-state">No matching Amazon CNC rows found for the uploaded order IDs.</div>
-
       <template v-else>
         <div class="cnc-shell__controls">
+          <div class="bulk-toolbar">
+            <label class="bulk-toolbar__select-all">
+              <input
+                :checked="allVisibleRowsSelected"
+                type="checkbox"
+                @change="toggleVisibleRowsSelection(($event.target as HTMLInputElement).checked)"
+              />
+              <span>Select visible rows</span>
+            </label>
+            <span class="bulk-toolbar__count">{{ selectedVisibleRowCount }} selected</span>
+            <select v-model="bulkOrderStatus" class="sheet-input bulk-toolbar__status">
+              <option value="">Bulk order status</option>
+              <option value="received">received</option>
+              <option value="manufactured">manufactured</option>
+              <option value="cancelled">cancelled</option>
+              <option value="returned">returned</option>
+            </select>
+            <button
+              type="button"
+              class="action-button action-button--inline"
+              :disabled="bulkSaving || !bulkOrderStatus || selectedVisibleRowCount === 0"
+              @click="applyBulkStatusUpdate"
+            >
+              {{ bulkSaving ? 'Updating...' : 'Update Selected Status' }}
+            </button>
+            <span v-if="bulkFeedback" class="bulk-toolbar__feedback">{{ bulkFeedback }}</span>
+          </div>
+
+          <div class="sync-actions">
+            <button
+              type="button"
+              class="secondary-button sync-button"
+              :disabled="loadingPdf || pollInFlight"
+              @click="triggerManualSync"
+            >
+              {{ pollInFlight ? 'Syncing...' : 'Sync Now' }}
+            </button>
+          </div>
+
           <OrderSearchBar
             v-model:searchKey="searchKey"
             v-model:searchValue="searchValue"
@@ -133,164 +237,204 @@
           editable
           helper-text="This queue preserves the uploaded PDF order and does not auto-sort"
         />
-        <div class="sheet-wrap">
-          <table class="cnc-sheet">
-            <thead>
-              <tr>
-                <th>PDF</th>
-                <th>Page</th>
-                <th>Order ID</th>
-                <th>Confirmed Date</th>
-                <th>Products</th>
-                <th>Quantity</th>
-                <th>Thickness</th>
-                <th>Round Product</th>
-                <th>SKU</th>
-                <th>Default Width (in)</th>
-                <th>Default Length (in)</th>
-                <th>Default Width (mm)</th>
-                <th>Default Length (mm)</th>
-                <th>Customer Width (in)</th>
-                <th>Customer Length (in)</th>
-                <th>Customer Width (mm)</th>
-                <th>Customer Length (mm)</th>
-                <th>Corner Radius and Notes</th>
-                <th>Order Status</th>
-                <th>Customer</th>
-                <th>City</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              <tr v-for="row in visibleRows" :key="row.rowKey" :style="getRowStyle(row)">
-                <td class="cell-pdf">{{ row.source.fileName }}</td>
-                <td class="cell-page">{{ row.source.pageNumber }}</td>
-                <td class="cell-order">
-                  <div class="order-id-line">{{ row.order.amazon_order_id }}</div>
-                  <div class="order-subline">BL #{{ row.order.baselinker_order_id }}</div>
-                </td>
-                <td class="cell-date">{{ formatDate(row.order.date_confirmed || row.order.date_add) }}</td>
-                <td class="cell-product">
-                  <div class="product-title">{{ row.product.name || 'Unnamed product' }}</div>
-                </td>
-                <td class="cell-quantity">{{ formatNumber(row.product.quantity) }}</td>
-                <td class="cell-thickness">{{ row.product.thickness || 'Not set' }}</td>
-                <td class="cell-round"><span class="status-pill">{{ row.product.is_round ? 'Yes' : 'No' }}</span></td>
-                <td class="cell-sku">{{ row.product.sku || 'Not set' }}</td>
-                <td class="cell-metric">{{ formatNumber(row.product.default_width_in_inches) }}</td>
-                <td class="cell-metric">{{ formatNumber(row.product.default_length_in_inches) }}</td>
-                <td class="cell-metric">{{ formatNumber(row.product.default_width_in_mm) }}</td>
-                <td class="cell-metric">{{ formatNumber(row.product.default_length_in_mm) }}</td>
-
-                <td class="cell-input-group">
-                  <input
-                    v-model="row.productEdit.customer_width_in_inches"
-                    type="number"
-                    step="0.01"
-                    class="sheet-input"
-                    placeholder="Width in"
-                  />
-                  <div class="increment-row">
-                    <button
-                      v-for="step in incrementSteps"
-                      :key="`${row.rowKey}-width-${step}`"
-                      @click="applyInchIncrement(row.productEdit, 'customer_width_in_inches', step)"
-                      type="button"
-                      class="increment-button"
-                    >
-                      +{{ step.toFixed(2) }}
-                    </button>
-                  </div>
-                </td>
-
-                <td class="cell-input-group">
-                  <input
-                    v-model="row.productEdit.customer_length_in_inches"
-                    type="number"
-                    step="0.01"
-                    class="sheet-input"
-                    placeholder="Length in"
-                  />
-                  <div class="increment-row">
-                    <button
-                      v-for="step in incrementSteps"
-                      :key="`${row.rowKey}-length-${step}`"
-                      @click="applyInchIncrement(row.productEdit, 'customer_length_in_inches', step)"
-                      type="button"
-                      class="increment-button"
-                    >
-                      +{{ step.toFixed(2) }}
-                    </button>
-                  </div>
-                </td>
-
-                <td class="cell-mm">
-                  <input
-                    v-model="row.productEdit.customer_width_in_mm"
-                    type="number"
-                    step="0.01"
-                    class="sheet-input sheet-input--mm"
-                    placeholder="Width mm"
-                  />
-                </td>
-                <td class="cell-mm">
-                  <input
-                    v-model="row.productEdit.customer_length_in_mm"
-                    type="number"
-                    step="0.01"
-                    class="sheet-input sheet-input--mm"
-                    placeholder="Length mm"
-                  />
-                </td>
-                <td class="cell-notes">
-                  <textarea
-                    v-model="row.productEdit.corner_radius_and_notes"
-                    rows="3"
-                    class="sheet-textarea"
-                    placeholder="Corner radius and notes"
-                  />
-                </td>
-                <td class="cell-status-edit">
-                  <select v-model="row.orderEdit.order_status" class="sheet-input">
-                    <option value="received">received</option>
-                    <option value="manufactured">manufactured</option>
-                    <option value="cancelled">cancelled</option>
-                    <option value="returned">returned</option>
-                  </select>
-                </td>
-                <td class="cell-customer">{{ formatText(row.order.delivery_fullname || row.order.user_login) }}</td>
-                <td class="cell-city">{{ formatText(row.order.delivery_city) }}</td>
-                <td class="cell-actions">
-                  <button
-                    type="button"
-                    @click.stop.prevent="saveProductRow(row)"
-                    :disabled="savingProducts[row.rowKey]"
-                    class="save-button"
-                  >
-                    {{ savingProducts[row.rowKey] ? 'Saving...' : 'Save' }}
-                  </button>
-                  <router-link :to="`/orders/${row.order.amazon_order_id}`" class="view-link">View</router-link>
-                  <p v-if="productFeedback[row.rowKey]" class="product-feedback">{{ productFeedback[row.rowKey] }}</p>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+        <div v-if="visibleRows.length === 0" class="empty-state empty-state--inline">
+          No matching Amazon CNC rows found for the current filter/search selection.
         </div>
+        <template v-else>
+          <div ref="sheetWrapRef" class="sheet-wrap">
+            <table class="cnc-sheet">
+              <thead>
+                <tr>
+                  <th class="cell-check">
+                    <input
+                      :checked="allVisibleRowsSelected"
+                      type="checkbox"
+                      @change="toggleVisibleRowsSelection(($event.target as HTMLInputElement).checked)"
+                    />
+                  </th>
+                  <th>PDF</th>
+                  <th>Page</th>
+                  <th>Order ID</th>
+                  <th>Confirmed Date</th>
+                  <th>Updated At</th>
+                  <th>Products</th>
+                  <th>Quantity</th>
+                  <th>Thickness</th>
+                  <th>Round Product</th>
+                  <th>SKU</th>
+                  <th>Default Width (in)</th>
+                  <th>Default Length (in)</th>
+                  <th>Default Width (mm)</th>
+                  <th>Default Length (mm)</th>
+                  <th>Customer Width (in)</th>
+                  <th>Customer Length (in)</th>
+                  <th>Customer Width (mm)</th>
+                  <th>Customer Length (mm)</th>
+                  <th>Corner Radius and Notes</th>
+                  <th>Order Status</th>
+                  <th>Customer</th>
+                  <th>City</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                <tr
+                  v-for="row in visibleRows"
+                  :key="row.rowKey"
+                  :class="{ 'row-updated': isRowUpdated(row.rowKey) }"
+                  :style="getRowStyle(row)"
+                >
+                  <td class="cell-check">
+                    <input
+                      :checked="isRowSelected(row.rowKey)"
+                      type="checkbox"
+                      @change="setRowSelected(row.rowKey, ($event.target as HTMLInputElement).checked)"
+                    />
+                  </td>
+                  <td class="cell-pdf">{{ row.source.fileName }}</td>
+                  <td class="cell-page">{{ row.source.pageNumber }}</td>
+                  <td class="cell-order">
+                    <div class="order-id-line">{{ row.order.amazon_order_id }}</div>
+                    <div class="order-subline">BL #{{ row.order.baselinker_order_id }}</div>
+                  </td>
+                  <td class="cell-date">{{ formatDate(row.order.date_confirmed || row.order.date_add) }}</td>
+                  <td class="cell-date">{{ formatDateTime(row.product.updated_at || row.order.updated_at) }}</td>
+                  <td class="cell-product">
+                    <div class="product-title" :title="row.product.name || 'Unnamed product'">{{ row.product.name || 'Unnamed product' }}</div>
+                  </td>
+                  <td class="cell-quantity">{{ formatNumber(row.product.quantity) }}</td>
+                  <td class="cell-thickness">{{ row.product.thickness || 'Not set' }}</td>
+                  <td class="cell-round"><span class="status-pill">{{ row.product.is_round ? 'Yes' : 'No' }}</span></td>
+                  <td class="cell-sku">{{ row.product.sku || 'Not set' }}</td>
+                  <td class="cell-metric">{{ formatNumber(row.product.default_width_in_inches) }}</td>
+                  <td class="cell-metric">{{ formatNumber(row.product.default_length_in_inches) }}</td>
+                  <td class="cell-metric">{{ formatNumber(row.product.default_width_in_mm) }}</td>
+                  <td class="cell-metric">{{ formatNumber(row.product.default_length_in_mm) }}</td>
+
+                  <td class="cell-input-group">
+                    <input
+                      v-model="row.productEdit.customer_width_in_inches"
+                      type="number"
+                      step="0.01"
+                      :class="['sheet-input', { 'sheet-input--remote-updated': isCellUpdated(row.rowKey, 'customer_width_in_inches') }]"
+                      placeholder="Width in"
+                    />
+                    <div class="increment-row">
+                      <button
+                        v-for="step in incrementSteps"
+                        :key="`${row.rowKey}-width-${step}`"
+                        @click="applyInchIncrement(row.productEdit, 'customer_width_in_inches', step)"
+                        type="button"
+                        class="increment-button"
+                      >
+                        +{{ step.toFixed(2) }}
+                      </button>
+                    </div>
+                  </td>
+
+                  <td class="cell-input-group">
+                    <input
+                      v-model="row.productEdit.customer_length_in_inches"
+                      type="number"
+                      step="0.01"
+                      :class="['sheet-input', { 'sheet-input--remote-updated': isCellUpdated(row.rowKey, 'customer_length_in_inches') }]"
+                      placeholder="Length in"
+                    />
+                    <div class="increment-row">
+                      <button
+                        v-for="step in incrementSteps"
+                        :key="`${row.rowKey}-length-${step}`"
+                        @click="applyInchIncrement(row.productEdit, 'customer_length_in_inches', step)"
+                        type="button"
+                        class="increment-button"
+                      >
+                        +{{ step.toFixed(2) }}
+                      </button>
+                    </div>
+                  </td>
+
+                  <td class="cell-mm">
+                    <input
+                      v-model="row.productEdit.customer_width_in_mm"
+                      type="number"
+                      step="0.01"
+                      class="sheet-input sheet-input--mm"
+                      placeholder="Width mm"
+                    />
+                    <div class="increment-row">
+                      <button type="button" class="increment-button increment-button--indicator" disabled>
+                        {{ formatInchDifference(row.productEdit, 'customer_width_in_inches') }}
+                      </button>
+                    </div>
+                  </td>
+                  <td class="cell-mm">
+                    <input
+                      v-model="row.productEdit.customer_length_in_mm"
+                      type="number"
+                      step="0.01"
+                      class="sheet-input sheet-input--mm"
+                      placeholder="Length mm"
+                    />
+                    <div class="increment-row">
+                      <button type="button" class="increment-button increment-button--indicator" disabled>
+                        {{ formatInchDifference(row.productEdit, 'customer_length_in_inches') }}
+                      </button>
+                    </div>
+                  </td>
+                  <td class="cell-notes">
+                    <textarea
+                      v-model="row.productEdit.corner_radius_and_notes"
+                      rows="3"
+                      :class="['sheet-textarea', { 'sheet-textarea--remote-updated': isCellUpdated(row.rowKey, 'corner_radius_and_notes') }]"
+                      placeholder="Corner radius and notes"
+                    />
+                  </td>
+                  <td class="cell-status-edit">
+                    <select v-model="row.orderEdit.order_status" class="sheet-input">
+                      <option value="received">received</option>
+                      <option value="manufactured">manufactured</option>
+                      <option value="cancelled">cancelled</option>
+                      <option value="returned">returned</option>
+                    </select>
+                  </td>
+                  <td class="cell-customer">{{ formatText(row.order.delivery_fullname || row.order.user_login) }}</td>
+                  <td class="cell-city">{{ formatText(row.order.delivery_city) }}</td>
+                  <td class="cell-actions">
+                    <button
+                      type="button"
+                      @click.stop.prevent="saveProductRow(row)"
+                      :disabled="savingProducts[row.rowKey]"
+                      class="save-button"
+                    >
+                      {{ savingProducts[row.rowKey] ? 'Saving...' : 'Save' }}
+                    </button>
+                    <router-link :to="`/orders/${row.order.amazon_order_id}`" class="view-link">View</router-link>
+                    <p v-if="productFeedback[row.rowKey]" class="product-feedback">{{ productFeedback[row.rowKey] }}</p>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <StickyHorizontalScrollbar :target="sheetWrapRef" always-visible />
+        </template>
       </template>
     </section>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import ListUtilityBar from '@/components/ListUtilityBar.vue'
 import OrderListFilterBar from '@/components/OrderListFilterBar.vue'
 import OrderSearchBar from '@/components/OrderSearchBar.vue'
+import StickyHorizontalScrollbar from '@/components/StickyHorizontalScrollbar.vue'
 import { ordersApi } from '@/api/orders'
 import { useAmazonRowHighlightRulesStore } from '@/stores/amazonRowHighlightRules'
 import { useOrdersStore } from '@/stores/orders'
-import type { Order, OrderProduct, OrderedAmazonOrderResult, UpdateManualFieldsRequest, UpdateProductManualFieldsRequest } from '@/types'
+import { usePdfCncQueueStore, type PdfQueueExtractedEntry } from '@/stores/pdfCncQueue'
+import type { ChangedAmazonOrderResult, Order, OrderProduct, OrderedAmazonOrderResult, UpdateManualFieldsRequest, UpdateProductManualFieldsRequest } from '@/types'
 import { formatStandardDate } from '@/utils/orderData'
 import { extractAmazonOrderIdsFromPdf } from '@/utils/pdfOrderExtraction'
 import { createOrderListAdvancedFilters, type OrderListAdvancedFilters } from '@/utils/orderListFilters'
@@ -307,13 +451,7 @@ type OrderEditRow = {
   order_status: string
 }
 
-type ExtractedEntry = {
-  fileKey: string
-  fileName: string
-  pageNumber: number
-  amazonOrderId: string
-  sequenceIndex: number
-}
+type ExtractedEntry = PdfQueueExtractedEntry
 
 type SheetRow = {
   rowKey: string
@@ -327,13 +465,41 @@ type VisibleRow = SheetRow & {
   orderEdit: OrderEditRow
 }
 
+type RemoteTrackedField = 'customer_width_in_inches' | 'customer_length_in_inches' | 'corner_radius_and_notes'
+
+type RemoteUpdateToast = {
+  id: number
+  orderId: string
+  message: string
+  createdAt: string
+}
+
+type RemoteFieldChange = {
+  rowKey: string
+  orderId: string
+  field: RemoteTrackedField
+  value: string
+  nextProduct: OrderProduct
+}
+
 const ordersStore = useOrdersStore()
 const rowHighlightRulesStore = useAmazonRowHighlightRulesStore()
-const incrementSteps = [0, 0.25, 0.5, 0.75, 1]
+const pdfQueueStore = usePdfCncQueueStore()
+const { extractedEntries, lookupResults, missingOrderIds, lastSuccessfulSyncAt, fileSummaries, queuedOrderIdCount, redundantOrderEntries } = storeToRefs(pdfQueueStore)
+const incrementSteps = [0, 0.1, 0.2, 0.25, 0.5, 0.75, 1]
 const SAVE_TIMEOUT_MS = 15000
+const POLL_INTERVAL_MS = 5000
+const UPDATE_VISUAL_MS = 15000
+
+const REMOTE_FIELD_LABELS: Record<RemoteTrackedField, string> = {
+  customer_width_in_inches: 'Customer width (in)',
+  customer_length_in_inches: 'Customer length (in)',
+  corner_radius_and_notes: 'Corner radius and notes',
+}
 
 const loadingPdf = ref(false)
 const uploadError = ref('')
+const uploadWarning = ref('')
 const fileInputKey = ref(0)
 const advancedFilters = ref(createOrderListAdvancedFilters())
 const appliedAdvancedFilters = ref(createOrderListAdvancedFilters())
@@ -343,19 +509,35 @@ const searchOperator = ref<'gt' | 'gte' | 'lt' | 'lte' | 'eq'>('gte')
 const appliedSearchKey = ref('order_id')
 const appliedSearchValue = ref('')
 const appliedSearchOperator = ref<'gt' | 'gte' | 'lt' | 'lte' | 'eq'>('gte')
-const extractedEntries = ref<ExtractedEntry[]>([])
-const lookupResults = ref<OrderedAmazonOrderResult[]>([])
-const missingOrderIds = ref<string[]>([])
 const productEdits = reactive<Record<string, ProductEditRow>>({})
 const orderEdits = reactive<Record<string, OrderEditRow>>({})
 const savingProducts = reactive<Record<string, boolean>>({})
 const productFeedback = reactive<Record<string, string>>({})
+const rowUpdateHighlights = reactive<Record<string, boolean>>({})
+const cellUpdateHighlights = reactive<Record<string, boolean>>({})
+const remoteUpdateToasts = ref<RemoteUpdateToast[]>([])
+const remoteUpdateLog = ref<RemoteUpdateToast[]>([])
+const pollInFlight = ref(false)
+const selectedRows = reactive<Record<string, boolean>>({})
+const bulkOrderStatus = ref('')
+const bulkSaving = ref(false)
+const bulkFeedback = ref('')
+const sheetWrapRef = ref<HTMLElement | null>(null)
+
+let pollTimerId: number | undefined
+let toastSequence = 0
+const toastTimers = new Map<number, number>()
 
 const extractedOrderIdCount = computed(() => extractedEntries.value.length)
 const successfulOrderIdCount = computed(() => lookupResults.value.filter((result) => result.found && result.order).length)
 const unavailableOrderIdCount = computed(() => lookupResults.value.filter((result) => !result.found).length)
 const showUploadSummary = computed(() =>
   extractedOrderIdCount.value > 0 || successfulOrderIdCount.value > 0 || unavailableOrderIdCount.value > 0,
+)
+const redundantQueueWarning = computed(() =>
+  redundantOrderEntries.value.length
+    ? `Removed ${redundantOrderEntries.value.length} redundant order ID entries from later PDFs. See details below.`
+    : '',
 )
 
 const sequenceOrders = computed(() =>
@@ -374,7 +556,7 @@ const baseRows = computed<VisibleRow[]>(() =>
     (order.products || [])
       .filter((product) => !product.is_discount_line)
       .map((product) => {
-        const rowKey = `${entry.sequenceIndex}:${product.order_product_id}`
+        const rowKey = `${entry.entryKey}:${product.order_product_id}`
         return {
           rowKey,
           order,
@@ -399,30 +581,8 @@ const visibleRows = computed<VisibleRow[]>(() =>
   ),
 )
 
-const fileSummaries = computed(() => {
-  const summaries = new Map<string, { fileKey: string; fileName: string; totalIds: number; orderIds: string[] }>()
-
-  for (const entry of extractedEntries.value) {
-    const existing = summaries.get(entry.fileKey)
-    if (existing) {
-      existing.totalIds += 1
-      existing.orderIds.push(entry.amazonOrderId)
-      continue
-    }
-    summaries.set(entry.fileKey, {
-      fileKey: entry.fileKey,
-      fileName: entry.fileName,
-      totalIds: 1,
-      orderIds: [entry.amazonOrderId],
-    })
-  }
-
-  return [...summaries.values()]
-})
-
-const uploadedFileNames = computed(() => fileSummaries.value.map((summary) => summary.fileName))
-
 const formatDate = (dateString?: string | null) => formatStandardDate(dateString)
+const formatDateTime = (dateString?: string | null) => formatStandardDate(dateString)
 const formatText = (value?: string | null) => value?.trim() || 'Not available'
 const formatNumber = (value?: number | null) => (value == null ? 'Not set' : String(value))
 const numberToString = (value?: number | null) => (value == null ? '' : String(value))
@@ -453,13 +613,81 @@ const ensureOrderEdit = (order: Order) => {
   return orderEdits[order.amazon_order_id] as OrderEditRow
 }
 
+const syncOrdersStore = (results: OrderedAmazonOrderResult[]) => {
+  ordersStore.orders = results
+    .map((result) => result.order)
+    .filter((order): order is Order => Boolean(order))
+}
+
 const syncProductEdits = () => {
-  for (const row of visibleRows.value) {
+  for (const row of baseRows.value) {
     productEdits[row.rowKey] = buildProductEdit(row.product)
     orderEdits[row.order.amazon_order_id] = buildOrderEdit(row.order)
     savingProducts[row.rowKey] = false
     productFeedback[row.rowKey] = ''
   }
+}
+
+const clearTimerMap = (timers: Map<string | number, number>) => {
+  for (const timerId of timers.values()) {
+    window.clearTimeout(timerId)
+  }
+  timers.clear()
+}
+
+const removeToast = (id: number) => {
+  remoteUpdateToasts.value = remoteUpdateToasts.value.filter((toast) => toast.id !== id)
+  const timerId = toastTimers.get(id)
+  if (timerId) {
+    window.clearTimeout(timerId)
+    toastTimers.delete(id)
+  }
+}
+
+const markRowUpdated = (rowKey: string) => {
+  rowUpdateHighlights[rowKey] = true
+}
+
+const markCellUpdated = (rowKey: string, field: RemoteTrackedField) => {
+  cellUpdateHighlights[`${rowKey}:${field}`] = true
+}
+
+const isRowUpdated = (rowKey: string) => Boolean(rowUpdateHighlights[rowKey])
+const isCellUpdated = (rowKey: string, field: RemoteTrackedField) => Boolean(cellUpdateHighlights[`${rowKey}:${field}`])
+
+const queueRemoteUpdateToast = (orderId: string, message: string) => {
+  const id = ++toastSequence
+  const nextToast = {
+    id,
+    orderId,
+    message,
+    createdAt: new Date().toISOString(),
+  } satisfies RemoteUpdateToast
+
+  remoteUpdateToasts.value = [
+    nextToast,
+    ...remoteUpdateToasts.value,
+  ].slice(0, 6)
+  remoteUpdateLog.value = [nextToast, ...remoteUpdateLog.value]
+
+  const timerId = window.setTimeout(() => {
+    removeToast(id)
+  }, UPDATE_VISUAL_MS)
+  toastTimers.set(id, timerId)
+}
+
+const clearLiveUpdateUiState = () => {
+  clearTimerMap(toastTimers)
+
+  for (const key of Object.keys(rowUpdateHighlights)) {
+    delete rowUpdateHighlights[key]
+  }
+  for (const key of Object.keys(cellUpdateHighlights)) {
+    delete cellUpdateHighlights[key]
+  }
+
+  remoteUpdateToasts.value = []
+  remoteUpdateLog.value = []
 }
 
 const toOptionalNumber = (value?: string | number | null) => {
@@ -484,14 +712,71 @@ const applyInchIncrement = (
 ) => {
   const mmField = field === 'customer_width_in_inches' ? 'customer_width_in_mm' : 'customer_length_in_mm'
   const currentInches = Number(edit[field] || 0)
-  const currentMM = Number(edit[mmField] || 0)
-  const baseMM = Number.isFinite(currentMM) && currentMM > 0 ? currentMM : currentInches * 25.4
-  const nextMM = baseMM + (delta * 25.4)
+  const nextInches = currentInches + delta
 
-  edit[mmField] = roundForInput(nextMM)
+  edit[mmField] = roundForInput(nextInches * 25.4)
 }
 
-const getRowStyle = (row: SheetRow) => rowHighlightRulesStore.getRowHighlightStyle(row.order, [row.product])
+const formatInchDifference = (
+  edit: ProductEditRow,
+  field: 'customer_width_in_inches' | 'customer_length_in_inches',
+) => {
+  const mmField = field === 'customer_width_in_inches' ? 'customer_width_in_mm' : 'customer_length_in_mm'
+  const mmValue = edit[mmField]
+
+  if (!mmValue || Number.isNaN(Number(mmValue))) {
+    return '+0.00 in'
+  }
+
+  const inches = Number(edit[field] || 0)
+  const delta = Number(mmValue) / 25.4 - (Number.isFinite(inches) ? inches : 0)
+  const normalized = Math.abs(delta) < 0.005 ? 0 : Math.round(delta * 100) / 100
+  const sign = normalized >= 0 ? '+' : '-'
+  return `${sign}${Math.abs(normalized).toFixed(2)} in`
+}
+
+const getRowStyle = (row: SheetRow) => {
+  const highlightStyle = rowHighlightRulesStore.getRowHighlightStyle(row.order, [row.product])
+  if (highlightStyle['--row-highlight-background']) {
+    return highlightStyle
+  }
+
+  if (row.order.order_status?.trim().toLowerCase() === 'manufactured') {
+    return {
+      '--row-highlight-background': 'rgba(226, 232, 240, 0.92)',
+    }
+  }
+
+  return {}
+}
+const selectedVisibleRows = computed(() => visibleRows.value.filter((row) => Boolean(selectedRows[row.rowKey])))
+const selectedVisibleRowCount = computed(() => selectedVisibleRows.value.length)
+const allVisibleRowsSelected = computed(() => visibleRows.value.length > 0 && selectedVisibleRows.value.length === visibleRows.value.length)
+
+const isRowSelected = (rowKey: string) => Boolean(selectedRows[rowKey])
+
+const setRowSelected = (rowKey: string, checked: boolean) => {
+  if (checked) {
+    selectedRows[rowKey] = true
+    return
+  }
+  delete selectedRows[rowKey]
+}
+
+const toggleVisibleRowsSelection = (checked: boolean) => {
+  for (const row of visibleRows.value) {
+    setRowSelected(row.rowKey, checked)
+  }
+}
+
+const pruneRowSelection = (allowedRowKeys: string[]) => {
+  const allowed = new Set(allowedRowKeys)
+  for (const rowKey of Object.keys(selectedRows)) {
+    if (!allowed.has(rowKey)) {
+      delete selectedRows[rowKey]
+    }
+  }
+}
 
 const applySearch = () => {
   appliedSearchKey.value = searchKey.value
@@ -524,18 +809,283 @@ const resetRowState = () => {
   for (const key of Object.keys(productFeedback)) {
     delete productFeedback[key]
   }
+  clearLiveUpdateUiState()
 }
 
 const clearUploadedPdfs = () => {
-  extractedEntries.value = []
-  lookupResults.value = []
-  missingOrderIds.value = []
+  stopPolling()
+  pdfQueueStore.clearQueue()
   uploadError.value = ''
+  uploadWarning.value = ''
   ordersStore.orders = []
   clearSearch()
   resetRowState()
   fileInputKey.value += 1
 }
+
+const refreshQueueResults = async () => {
+  await pdfQueueStore.refreshLookupResults()
+  syncOrdersStore(lookupResults.value)
+  syncProductEdits()
+
+  if (!lookupResults.value.some((result) => result.found && result.order)) {
+    uploadError.value = 'The PDFs contained order IDs, but none of them matched Amazon orders in the app.'
+  } else {
+    uploadError.value = ''
+  }
+}
+
+const removeQueuedFile = async (fileKey: string) => {
+  loadingPdf.value = true
+  uploadError.value = ''
+  uploadWarning.value = ''
+  stopPolling()
+
+  try {
+    resetRowState()
+    pdfQueueStore.removeFile(fileKey)
+
+    if (!extractedEntries.value.length) {
+      ordersStore.orders = []
+      return
+    }
+
+    await refreshQueueResults()
+    startPolling()
+  } catch (error: any) {
+    uploadError.value = error?.message || 'Failed to rebuild the PDF queue.'
+  } finally {
+    loadingPdf.value = false
+  }
+}
+
+const formatRemoteFieldValue = (field: RemoteTrackedField, product: OrderProduct) => {
+  switch (field) {
+    case 'customer_width_in_inches':
+      return numberToString(product.customer_width_in_inches) || 'Cleared'
+    case 'customer_length_in_inches':
+      return numberToString(product.customer_length_in_inches) || 'Cleared'
+    case 'corner_radius_and_notes':
+      return product.corner_radius_and_notes?.trim() || 'Cleared'
+  }
+}
+
+const updateProductEditFromRemote = (rowKey: string, field: RemoteTrackedField, nextProduct: OrderProduct) => {
+  const edit = productEdits[rowKey]
+  if (!edit) return
+
+  if (field === 'customer_width_in_inches') {
+    edit.customer_width_in_inches = numberToString(nextProduct.customer_width_in_inches)
+    edit.customer_width_in_mm = numberToString(nextProduct.customer_width_in_mm)
+    return
+  }
+
+  if (field === 'customer_length_in_inches') {
+    edit.customer_length_in_inches = numberToString(nextProduct.customer_length_in_inches)
+    edit.customer_length_in_mm = numberToString(nextProduct.customer_length_in_mm)
+    return
+  }
+
+  edit.corner_radius_and_notes = nextProduct.corner_radius_and_notes ?? ''
+}
+
+const getRemoteFieldChanges = (
+  previousOrder: Order,
+  nextOrder: Order,
+  source: ExtractedEntry,
+): RemoteFieldChange[] => {
+  const previousProducts = new Map(
+    (previousOrder.products || [])
+      .filter((product) => !product.is_discount_line)
+      .map((product) => [product.order_product_id, product] as const),
+  )
+
+  const changes: RemoteFieldChange[] = []
+
+  for (const nextProduct of nextOrder.products || []) {
+    if (nextProduct.is_discount_line) continue
+
+    const previousProduct = previousProducts.get(nextProduct.order_product_id)
+    if (!previousProduct) continue
+
+    const rowKey = `${source.entryKey}:${nextProduct.order_product_id}`
+    const trackedFields: RemoteTrackedField[] = [
+      'customer_width_in_inches',
+      'customer_length_in_inches',
+      'corner_radius_and_notes',
+    ]
+
+    for (const field of trackedFields) {
+      const previousValue = field === 'corner_radius_and_notes'
+        ? previousProduct.corner_radius_and_notes?.trim() || ''
+        : previousProduct[field]
+      const nextValue = field === 'corner_radius_and_notes'
+        ? nextProduct.corner_radius_and_notes?.trim() || ''
+        : nextProduct[field]
+
+      if (previousValue === nextValue) continue
+
+      changes.push({
+        rowKey,
+        orderId: nextOrder.amazon_order_id,
+        field,
+        value: formatRemoteFieldValue(field, nextProduct),
+        nextProduct,
+      })
+    }
+  }
+
+  return changes
+}
+
+const applyChangedOrders = (changedOrders: ChangedAmazonOrderResult[]) => {
+  if (!changedOrders.length) {
+    return
+  }
+
+  const changedOrderMap = new Map(
+    changedOrders
+      .filter((result): result is ChangedAmazonOrderResult & { order: Order } => Boolean(result.order))
+      .map((result) => [result.amazon_order_id, result.order] as const),
+  )
+
+  const pendingChanges: RemoteFieldChange[] = []
+
+  lookupResults.value = lookupResults.value.map((result, index) => {
+    const nextOrder = changedOrderMap.get(result.requested_amazon_order_id)
+    if (!nextOrder) {
+      return result
+    }
+
+    const source = extractedEntries.value[index]
+    if (source && result.found && result.order) {
+      pendingChanges.push(...getRemoteFieldChanges(result.order, nextOrder, source))
+    }
+
+    orderEdits[nextOrder.amazon_order_id] = buildOrderEdit(nextOrder)
+
+    return {
+      ...result,
+      found: true,
+      order: nextOrder,
+    }
+  })
+
+  syncOrdersStore(lookupResults.value)
+
+  const changesByOrder = new Map<string, string[]>()
+
+  for (const change of pendingChanges) {
+    updateProductEditFromRemote(change.rowKey, change.field, change.nextProduct)
+    markRowUpdated(change.rowKey)
+    markCellUpdated(change.rowKey, change.field)
+
+    const fieldMessage = `${REMOTE_FIELD_LABELS[change.field]}: ${change.value || 'Cleared'}`
+    const existingMessages = changesByOrder.get(change.orderId) || []
+    if (!existingMessages.includes(fieldMessage)) {
+      existingMessages.push(fieldMessage)
+      changesByOrder.set(change.orderId, existingMessages)
+    }
+  }
+
+  for (const [orderId, messages] of changesByOrder.entries()) {
+    queueRemoteUpdateToast(orderId, messages.join(' | '))
+  }
+}
+
+const pollForRemoteUpdates = async () => {
+  if (
+    pollInFlight.value ||
+    loadingPdf.value ||
+    !extractedEntries.value.length ||
+    !lastSuccessfulSyncAt.value ||
+    document.visibilityState !== 'visible'
+  ) {
+    return
+  }
+
+  pollInFlight.value = true
+
+  try {
+    const response = await ordersApi.getChangedByIDs(
+      extractedEntries.value.map((entry) => entry.amazonOrderId),
+      lastSuccessfulSyncAt.value,
+    )
+    missingOrderIds.value = response.missing_amazon_order_ids
+    applyChangedOrders(response.changed_orders)
+    lastSuccessfulSyncAt.value = response.server_time
+  } catch {
+    // Keep polling quiet. Operators should not lose screen state because of a transient refresh failure.
+  } finally {
+    pollInFlight.value = false
+  }
+}
+
+const startPolling = () => {
+  if (pollTimerId || !extractedEntries.value.length || document.visibilityState !== 'visible') {
+    return
+  }
+
+  pollTimerId = window.setInterval(() => {
+    void pollForRemoteUpdates()
+  }, POLL_INTERVAL_MS)
+}
+
+const stopPolling = () => {
+  if (!pollTimerId) return
+  window.clearInterval(pollTimerId)
+  pollTimerId = undefined
+}
+
+const handleVisibilityChange = () => {
+  if (document.visibilityState === 'visible' && extractedEntries.value.length) {
+    void pollForRemoteUpdates()
+    startPolling()
+    return
+  }
+
+  stopPolling()
+}
+
+const triggerManualSync = async () => {
+  await pollForRemoteUpdates()
+}
+
+const applyBulkStatusUpdate = async () => {
+  if (!bulkOrderStatus.value || selectedVisibleRows.value.length === 0) return
+
+  bulkSaving.value = true
+  bulkFeedback.value = ''
+
+  try {
+    const selectedRowCount = selectedVisibleRows.value.length
+    const uniqueOrderIds = [...new Set(selectedVisibleRows.value.map((row) => row.order.amazon_order_id))]
+    for (const amazonOrderId of uniqueOrderIds) {
+      const updated = await withTimeout(
+        ordersStore.updateOrderManualFields(amazonOrderId, {
+          order_status: bulkOrderStatus.value,
+        }),
+        SAVE_TIMEOUT_MS,
+      )
+      orderEdits[amazonOrderId] = buildOrderEdit(updated)
+    }
+
+    syncProductEdits()
+    bulkFeedback.value = `Updated ${selectedRowCount} selected rows across ${uniqueOrderIds.length} orders`
+  } catch (error: any) {
+    bulkFeedback.value = error.response?.data?.error || error.message || 'Bulk update failed'
+  } finally {
+    bulkSaving.value = false
+  }
+}
+
+watch(
+  () => visibleRows.value.map((row) => row.rowKey),
+  (rowKeys) => {
+    pruneRowSelection(rowKeys)
+  },
+  { immediate: true },
+)
 
 const handleFileSelection = async (event: Event) => {
   const input = event.target as HTMLInputElement
@@ -548,45 +1098,42 @@ const handleFileSelection = async (event: Event) => {
 
   loadingPdf.value = true
   uploadError.value = ''
-  missingOrderIds.value = []
+  uploadWarning.value = ''
+  stopPolling()
 
   try {
-    resetRowState()
-    const nextEntries: ExtractedEntry[] = []
+    const extractedFiles: Array<{ fileName: string; entries: Array<{ pageNumber: number; amazonOrderId: string }> }> = []
 
-    for (const [fileIndex, file] of files.entries()) {
+    for (const file of files) {
       const extracted = await extractAmazonOrderIdsFromPdf(file)
-      for (const item of extracted) {
-        nextEntries.push({
-          fileKey: `${fileIndex}:${file.name}`,
-          fileName: file.name,
-          pageNumber: item.pageNumber,
-          amazonOrderId: item.amazonOrderId,
-          sequenceIndex: nextEntries.length,
-        })
-      }
+      extractedFiles.push({
+        fileName: file.name,
+        entries: extracted,
+      })
     }
 
-    if (!nextEntries.length) {
-      clearUploadedPdfs()
+    if (!extractedFiles.some((file) => file.entries.length > 0)) {
       uploadError.value = 'No Amazon order IDs were found in the uploaded PDFs.'
       return
     }
 
-    const response = await ordersApi.getByIDs(nextEntries.map((entry) => entry.amazonOrderId))
-    extractedEntries.value = nextEntries
-    lookupResults.value = response.results
-    missingOrderIds.value = response.missing_amazon_order_ids
-    ordersStore.orders = response.results
-      .map((result) => result.order)
-      .filter((order): order is Order => Boolean(order))
-    syncProductEdits()
+    const appendResult = pdfQueueStore.appendFiles(extractedFiles)
 
-    if (!response.results.some((result) => result.found && result.order)) {
-      uploadError.value = 'The PDFs contained order IDs, but none of them matched Amazon orders in the app.'
+    if (appendResult.duplicateFileNames.length) {
+      uploadWarning.value = `Skipped duplicate PDF files: ${appendResult.duplicateFileNames.join(', ')}`
     }
+
+    if (appendResult.addedFileNames.length === 0) {
+      if (!uploadWarning.value) {
+        uploadError.value = 'No new PDF files were added to the queue.'
+      }
+      return
+    }
+
+    resetRowState()
+    await refreshQueueResults()
+    startPolling()
   } catch (error: any) {
-    clearUploadedPdfs()
     uploadError.value = error?.message || 'Failed to read the uploaded PDFs.'
   } finally {
     loadingPdf.value = false
@@ -651,8 +1198,46 @@ const saveProductRow = async (row: VisibleRow) => {
   }
 }
 
+const restoreQueueState = async () => {
+  if (!extractedEntries.value.length) {
+    ordersStore.orders = []
+    return
+  }
+
+  if (lookupResults.value.length === extractedEntries.value.length) {
+    syncOrdersStore(lookupResults.value)
+    syncProductEdits()
+    if (!lastSuccessfulSyncAt.value) {
+      lastSuccessfulSyncAt.value = new Date().toISOString()
+    }
+    startPolling()
+    return
+  }
+
+  loadingPdf.value = true
+  uploadError.value = ''
+  uploadWarning.value = ''
+
+  try {
+    await refreshQueueResults()
+    startPolling()
+  } catch (error: any) {
+    uploadError.value = error?.message || 'Failed to restore the PDF queue.'
+  } finally {
+    loadingPdf.value = false
+  }
+}
+
 onMounted(() => {
   void rowHighlightRulesStore.ensureLoaded()
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  void restoreQueueState()
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  stopPolling()
+  clearLiveUpdateUiState()
 })
 
 function matchesAdvancedFilters(row: VisibleRow, filters: OrderListAdvancedFilters) {
@@ -826,11 +1411,45 @@ function compareNumber(
   gap: 1rem;
 }
 
+.toast-stack {
+  position: fixed;
+  top: 1.25rem;
+  right: 1.25rem;
+  z-index: 1200;
+  display: grid;
+  gap: 0.75rem;
+  width: min(28rem, calc(100vw - 2rem));
+}
+
+.update-toast {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.95rem 1rem;
+  border-radius: 18px;
+  border: 1px solid rgba(234, 88, 12, 0.28);
+  background: linear-gradient(135deg, rgba(255, 237, 213, 0.98), rgba(255, 247, 237, 0.98));
+  color: #9a3412;
+  box-shadow: 0 18px 36px rgba(154, 52, 18, 0.16);
+}
+
+.update-toast strong {
+  font-size: 0.92rem;
+  font-weight: 900;
+}
+
+.update-toast span {
+  font-size: 0.88rem;
+  line-height: 1.4;
+  font-weight: 700;
+}
+
 .cnc-hero,
+.update-log-card,
 .upload-card,
 .result-card,
 .active-files-card,
 .missing-orders-card,
+.redundant-orders-card,
 .sequence-card,
 .cnc-shell {
   background: rgba(255, 255, 255, 0.95);
@@ -900,9 +1519,11 @@ h1 {
 }
 
 .upload-card,
+.update-log-card,
 .result-card,
 .active-files-card,
 .missing-orders-card,
+.redundant-orders-card,
 .sequence-card,
 .cnc-shell {
   padding: 1.2rem;
@@ -916,6 +1537,48 @@ h1 {
 .cnc-shell__controls {
   display: grid;
   gap: 1rem;
+}
+
+.bulk-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.bulk-toolbar__select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.bulk-toolbar__count,
+.bulk-toolbar__feedback {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #475569;
+}
+
+.sheet-input.bulk-toolbar__status {
+  flex: 0 0 clamp(11rem, 16vw, 13rem);
+  width: clamp(11rem, 16vw, 13rem);
+  max-width: 100%;
+}
+
+.sync-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.sync-button {
+  min-width: 8.5rem;
+}
+
+.row-updated > td {
+  background: rgba(255, 237, 213, 0.88) !important;
+  transition: background-color 0.25s ease;
 }
 
 .upload-card {
@@ -938,24 +1601,122 @@ h1 {
   color: #475569;
 }
 
-.active-files-list {
+.update-log-card {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.update-log-card__header {
   display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
   flex-wrap: wrap;
+}
+
+.update-log-card__header p {
+  margin: 0.45rem 0 0;
+  color: #475569;
+  max-width: 72ch;
+}
+
+.update-log-list {
+  display: grid;
+  gap: 0.6rem;
+  max-height: 18rem;
+  overflow-y: auto;
+  padding-right: 0.2rem;
+}
+
+.update-log-item {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.72rem 0.88rem;
+  border-radius: 14px;
+  border: 1px solid rgba(234, 88, 12, 0.18);
+  background: linear-gradient(135deg, rgba(255, 247, 237, 0.98), rgba(255, 255, 255, 0.98));
+}
+
+.update-log-item__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.update-log-item__meta strong {
+  color: #9a3412;
+  font-size: 0.9rem;
+  font-weight: 900;
+}
+
+.update-log-item__meta span {
+  color: #64748b;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.update-log-item p {
+  margin: 0;
+  color: #7c2d12;
+  font-size: 0.85rem;
+  line-height: 1.42;
+  font-weight: 700;
+}
+
+.active-files-card__header--actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.active-files-list {
+  display: grid;
   gap: 0.7rem;
 }
 
-.active-file-pill {
-  display: inline-flex;
+.active-file-card {
+  display: flex;
   align-items: center;
-  border-radius: 999px;
-  padding: 0.6rem 0.9rem;
+  justify-content: space-between;
+  gap: 1rem;
+  border-radius: 18px;
+  padding: 0.85rem 1rem;
   background: #eff6ff;
   color: #1d4ed8;
-  font-weight: 800;
   border: 1px solid rgba(59, 130, 246, 0.18);
 }
 
+.active-file-card__copy {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.active-file-card__copy strong {
+  color: #0f172a;
+  font-size: 0.95rem;
+}
+
+.active-file-card__copy span {
+  color: #475569;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.active-file-card__remove {
+  flex-shrink: 0;
+}
+
 .missing-orders-card {
+  display: grid;
+  gap: 1rem;
+}
+
+.redundant-orders-card {
   display: grid;
   gap: 1rem;
 }
@@ -965,10 +1726,20 @@ h1 {
   color: #475569;
 }
 
+.redundant-orders-card__header p {
+  margin: 0.45rem 0 0;
+  color: #475569;
+}
+
 .missing-orders-list {
   display: flex;
   flex-wrap: wrap;
   gap: 0.7rem;
+}
+
+.redundant-orders-list {
+  display: grid;
+  gap: 0.55rem;
 }
 
 .missing-order-pill {
@@ -982,6 +1753,57 @@ h1 {
   border: 1px solid rgba(249, 115, 22, 0.2);
 }
 
+.redundant-order-card {
+  display: grid;
+  grid-template-columns: minmax(12rem, auto) minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 0.65rem 0.85rem;
+  border-radius: 14px;
+  padding: 0.65rem 0.85rem;
+  background: #fff7ed;
+  border: 1px solid rgba(249, 115, 22, 0.2);
+  color: #9a3412;
+}
+
+.redundant-order-card__id {
+  color: #7c2d12;
+  font-size: 0.94rem;
+  white-space: nowrap;
+}
+
+.redundant-order-card__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.redundant-order-card__tag {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 0.2rem 0.5rem;
+  background: rgba(249, 115, 22, 0.14);
+  color: #c2410c;
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.redundant-order-card__tag--kept {
+  background: rgba(13, 148, 136, 0.12);
+  color: #0f766e;
+}
+
+.redundant-order-card__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
 .result-card__header p {
   margin: 0.45rem 0 0;
   color: #475569;
@@ -989,7 +1811,7 @@ h1 {
 
 .result-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 0.85rem;
 }
 
@@ -1036,7 +1858,8 @@ h1 {
 .upload-button,
 .secondary-button,
 .save-button,
-.view-link {
+.view-link,
+.action-button {
   border: 0;
   border-radius: 999px;
   padding: 0.75rem 1.2rem;
@@ -1046,10 +1869,16 @@ h1 {
 }
 
 .upload-button,
-.save-button {
+.save-button,
+.action-button {
   background: linear-gradient(135deg, #0284c7, #0f766e);
   color: #fff;
   box-shadow: 0 18px 36px rgba(2, 132, 199, 0.24);
+}
+
+.action-button--inline {
+  width: auto;
+  min-width: 13rem;
 }
 
 .secondary-button,
@@ -1098,48 +1927,45 @@ h1 {
 
 .sequence-list {
   display: grid;
-  gap: 0.85rem;
+  gap: 0.55rem;
 }
 
 .sequence-item {
-  border-radius: 18px;
+  border-radius: 14px;
   border: 1px solid rgba(148, 163, 184, 0.35);
   background: #f8fafc;
-  padding: 0.95rem 1rem;
+  padding: 0.72rem 0.9rem;
   display: grid;
-  gap: 0.8rem;
+  grid-template-columns: minmax(12rem, auto) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
 }
 
-.sequence-item__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
+.sequence-item__file {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #0f172a;
+  font-size: 0.98rem;
 }
 
 .sequence-item__meta {
   margin: 0;
   color: #475569;
   font-weight: 700;
+  white-space: nowrap;
 }
 
-.sequence-item__ids {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.sequence-id-pill {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  padding: 0.42rem 0.68rem;
-  background: #ffffff;
-  border: 1px solid rgba(148, 163, 184, 0.28);
+.sequence-item__line {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: #334155;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.78rem;
+  font-size: 0.79rem;
   font-weight: 700;
 }
 
@@ -1152,11 +1978,12 @@ h1 {
 
 .sheet-wrap {
   overflow-x: auto;
+  padding-bottom: 0.35rem;
 }
 
 .cnc-sheet {
   width: 100%;
-  min-width: 2320px;
+  min-width: 2120px;
   border-collapse: separate;
   border-spacing: 0;
 }
@@ -1165,22 +1992,29 @@ h1 {
   position: sticky;
   top: 0;
   z-index: 1;
-  padding: 0.85rem 0.7rem;
+  padding: 0.68rem 0.52rem;
   text-align: left;
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   color: #0f766e;
   background: #f8fafc;
   border-bottom: 1px solid rgba(148, 163, 184, 0.25);
 }
 
 .cnc-sheet td {
-  padding: 0.85rem 0.7rem;
+  padding: 0.62rem 0.52rem;
   vertical-align: top;
   border-bottom: 1px solid rgba(226, 232, 240, 0.85);
   color: #0f172a;
   background: var(--row-highlight-background, rgba(255, 255, 255, 0.9));
+  font-size: 0.94rem;
+}
+
+.cell-check {
+  width: 2.8rem;
+  min-width: 2.8rem;
+  text-align: center;
 }
 
 .order-id-line,
@@ -1193,11 +2027,12 @@ h1 {
 .cell-pdf,
 .product-feedback {
   color: #64748b;
-  font-size: 0.85rem;
+  font-size: 0.78rem;
 }
 
 .cell-pdf {
-  min-width: 11rem;
+  min-width: 8.4rem;
+  font-size: 0.8rem;
 }
 
 .cell-page,
@@ -1208,37 +2043,44 @@ h1 {
 }
 
 .cell-page {
-  width: 4.5rem;
+  width: 3.4rem;
 }
 
 .cell-date {
-  min-width: 9rem;
+  min-width: 7.2rem;
 }
 
 .cell-order {
-  min-width: 16rem;
+  min-width: 12.6rem;
 }
 
 .cell-product {
-  min-width: 18rem;
+  min-width: 13rem;
+  max-width: 14.5rem;
 }
 
 .product-title {
   font-weight: 700;
-  line-height: 1.45;
+  font-size: 0.92rem;
+  line-height: 1.32;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
 }
 
 .cell-thickness {
-  min-width: 5.5rem;
+  min-width: 4.8rem;
   white-space: nowrap;
 }
 
 .cell-sku {
-  min-width: 6.5rem;
+  min-width: 5.4rem;
+  overflow-wrap: anywhere;
 }
 
 .cell-metric {
-  min-width: 4.9rem;
+  min-width: 4.1rem;
 }
 
 .cell-input-group,
@@ -1249,71 +2091,93 @@ h1 {
 }
 
 .cell-input-group {
-  min-width: 14rem;
+  min-width: 12.1rem;
 }
 
 .cell-mm {
-  min-width: 10rem;
+  min-width: 8.5rem;
 }
 
 .cell-notes {
-  min-width: 18rem;
+  min-width: 14.5rem;
 }
 
 .cell-status-edit {
-  min-width: 170px;
+  min-width: 8.2rem;
 }
 
 .cell-customer {
-  min-width: 10rem;
+  min-width: 8.2rem;
 }
 
 .cell-city {
-  min-width: 8rem;
+  min-width: 6.6rem;
 }
 
 .sheet-input,
 .sheet-textarea {
   width: 100%;
-  border-radius: 14px;
+  border-radius: 12px;
   border: 1px solid rgba(148, 163, 184, 0.45);
   background: rgba(255, 255, 255, 0.96);
-  padding: 0.65rem 0.75rem;
+  padding: 0.5rem 0.62rem;
   font: inherit;
+  font-size: 0.88rem;
   color: #0f172a;
 }
 
 .sheet-textarea {
-  min-height: 88px;
+  min-height: 68px;
   resize: vertical;
 }
 
+.sheet-input--remote-updated,
+.sheet-textarea--remote-updated {
+  color: #991b1b;
+  font-weight: 900;
+  border-color: rgba(220, 38, 38, 0.55);
+  background: rgba(254, 242, 242, 0.96);
+  box-shadow: 0 0 0 1px rgba(220, 38, 38, 0.08);
+}
+
 .sheet-input--mm {
-  min-width: 8.75rem;
+  min-width: 7.6rem;
 }
 
 .increment-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.45rem;
-  margin-top: 0.45rem;
+  gap: 0.28rem;
+  margin-top: 0.3rem;
 }
 
 .increment-button {
   border: 0;
   border-radius: 999px;
-  padding: 0.28rem 0.55rem;
-  font-size: 0.73rem;
+  padding: 0.22rem 0.45rem;
+  font-size: 0.68rem;
   font-weight: 800;
   background: #dbeafe;
   color: #1d4ed8;
   cursor: pointer;
 }
 
+.increment-button--indicator {
+  min-width: 5rem;
+  justify-content: center;
+  background: #e2e8f0;
+  color: #334155;
+  cursor: default;
+}
+
+.increment-button--indicator:disabled {
+  opacity: 1;
+}
+
 .cell-actions {
   display: grid;
-  gap: 0.45rem;
-  min-width: 9rem;
+  gap: 0.32rem;
+  min-width: 7.8rem;
 }
 
 .save-button,
@@ -1322,14 +2186,53 @@ h1 {
   align-items: center;
   justify-content: center;
   width: 100%;
-  min-height: 2.7rem;
-  border-radius: 14px;
+  min-height: 2.35rem;
+  border-radius: 12px;
   font-weight: 800;
 }
 
+.cell-round .status-pill {
+  padding: 0.28rem 0.58rem;
+  font-size: 0.76rem;
+}
+
+.order-id-line {
+  font-size: 0.96rem;
+  line-height: 1.2;
+}
+
+.order-subline {
+  margin-top: 0.16rem;
+  line-height: 1.15;
+}
+
 @media (max-width: 900px) {
+  .toast-stack {
+    top: 0.8rem;
+    right: 0.8rem;
+    width: min(24rem, calc(100vw - 1.6rem));
+  }
+
   .cnc-hero {
     flex-direction: column;
+  }
+
+  .bulk-toolbar {
+    align-items: stretch;
+  }
+
+  .redundant-order-card {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .sheet-input.bulk-toolbar__status,
+  .action-button--inline {
+    width: 100%;
+  }
+
+  .sync-actions {
+    justify-content: stretch;
   }
 
   .upload-card__actions {
@@ -1338,7 +2241,8 @@ h1 {
   }
 
   .upload-button,
-  .secondary-button {
+  .secondary-button,
+  .sync-button {
     text-align: center;
   }
 
@@ -1346,8 +2250,9 @@ h1 {
     grid-template-columns: 1fr;
   }
 
-  .sequence-item__head {
-    align-items: flex-start;
+  .sequence-item {
+    grid-template-columns: 1fr;
+    align-items: start;
   }
 }
 </style>

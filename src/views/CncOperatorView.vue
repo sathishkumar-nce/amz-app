@@ -35,6 +35,34 @@
       <div v-else-if="visibleRows.length === 0" class="empty-state">No CNC rows found.</div>
 
       <template v-else>
+        <div class="bulk-toolbar">
+          <label class="bulk-toolbar__select-all">
+            <input
+              :checked="allVisibleRowsSelected"
+              type="checkbox"
+              @change="toggleVisibleRowsSelection(($event.target as HTMLInputElement).checked)"
+            />
+            <span>Select visible rows</span>
+          </label>
+          <span class="bulk-toolbar__count">{{ selectedVisibleRowCount }} selected</span>
+          <select v-model="bulkOrderStatus" class="sheet-input bulk-toolbar__status">
+            <option value="">Bulk order status</option>
+            <option value="received">received</option>
+            <option value="manufactured">manufactured</option>
+            <option value="cancelled">cancelled</option>
+            <option value="returned">returned</option>
+          </select>
+          <button
+            type="button"
+            class="action-button action-button--inline"
+            :disabled="bulkSaving || !bulkOrderStatus || selectedVisibleRowCount === 0"
+            @click="applyBulkStatusUpdate"
+          >
+            {{ bulkSaving ? 'Updating...' : 'Update Selected Status' }}
+          </button>
+          <span v-if="bulkFeedback" class="bulk-toolbar__feedback">{{ bulkFeedback }}</span>
+        </div>
+
         <ListUtilityBar
           :total="ordersStore.pagination.total"
           :page="ordersStore.pagination.page"
@@ -43,14 +71,22 @@
           editable
           helper-text="Use the quick inch chips for faster dimension updates"
         />
-        <div class="sheet-wrap">
+        <div ref="sheetWrapRef" class="sheet-wrap">
           <table class="cnc-sheet">
           <thead>
             <tr>
+              <th class="cell-check">
+                <input
+                  :checked="allVisibleRowsSelected"
+                  type="checkbox"
+                  @change="toggleVisibleRowsSelection(($event.target as HTMLInputElement).checked)"
+                />
+              </th>
               <th>Order ID</th>
               <th>
                 <SortableHeader label="Confirmed Date" :direction="sortState.key === 'confirmed_date' ? sortState.direction : null" @sort="setSort('confirmed_date', $event)" />
               </th>
+              <th>Updated At</th>
               <th>
                 <SortableHeader label="Order Status" :direction="sortState.key === 'order_status' ? sortState.direction : null" @sort="setSort('order_status', $event)" />
               </th>
@@ -87,11 +123,19 @@
 
           <tbody>
             <tr v-for="row in visibleRows" :key="row.rowKey" :style="getRowStyle(row)">
+              <td class="cell-check">
+                <input
+                  :checked="isRowSelected(row.rowKey)"
+                  type="checkbox"
+                  @change="setRowSelected(row.rowKey, ($event.target as HTMLInputElement).checked)"
+                />
+              </td>
               <td class="cell-order">
                 <div class="order-id-line">{{ row.order.amazon_order_id }}</div>
                 <div class="order-subline">BL #{{ row.order.baselinker_order_id }}</div>
               </td>
               <td>{{ formatDate(row.order.date_confirmed || row.order.date_add) }}</td>
+              <td>{{ formatDateTime(row.product.updated_at || row.order.updated_at) }}</td>
               <td><span class="status-pill">{{ row.order.order_status }}</span></td>
               <td class="cell-product">
                 <div class="product-title">{{ row.product.name || 'Unnamed product' }}</div>
@@ -155,6 +199,11 @@
                   class="sheet-input sheet-input--mm"
                   placeholder="Width mm"
                 />
+                <div class="increment-row">
+                  <button type="button" class="increment-button increment-button--indicator" disabled>
+                    {{ formatInchDifference(row.productEdit, 'customer_width_in_inches') }}
+                  </button>
+                </div>
               </td>
               <td class="cell-mm">
                 <input
@@ -164,6 +213,11 @@
                   class="sheet-input sheet-input--mm"
                   placeholder="Length mm"
                 />
+                <div class="increment-row">
+                  <button type="button" class="increment-button increment-button--indicator" disabled>
+                    {{ formatInchDifference(row.productEdit, 'customer_length_in_inches') }}
+                  </button>
+                </div>
               </td>
               <td class="cell-notes">
                 <textarea
@@ -199,6 +253,7 @@
           </tbody>
           </table>
         </div>
+        <StickyHorizontalScrollbar :target="sheetWrapRef" always-visible />
       </template>
 
       <PaginationControls
@@ -215,12 +270,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import ListUtilityBar from '@/components/ListUtilityBar.vue'
 import OrderListFilterBar from '@/components/OrderListFilterBar.vue'
 import OrderSearchBar from '@/components/OrderSearchBar.vue'
 import PaginationControls from '@/components/PaginationControls.vue'
 import SortableHeader from '@/components/SortableHeader.vue'
+import StickyHorizontalScrollbar from '@/components/StickyHorizontalScrollbar.vue'
 import { useAmazonRowHighlightRulesStore } from '@/stores/amazonRowHighlightRules'
 import { useOrdersStore } from '@/stores/orders'
 import type { Order, OrderProduct, UpdateManualFieldsRequest, UpdateProductManualFieldsRequest } from '@/types'
@@ -274,12 +330,17 @@ const sortState = ref<{ key: SortKey | null; direction: SortDirection }>({
 })
 const searchKey = ref('order_id')
 const searchValue = ref('')
-const incrementSteps = [0, 0.25, 0.5, 0.75, 1]
+const incrementSteps = [0, 0.1, 0.2, 0.25, 0.5, 0.75, 1]
 const SAVE_TIMEOUT_MS = 15000
 const productEdits = reactive<Record<string, ProductEditRow>>({})
 const orderEdits = reactive<Record<string, OrderEditRow>>({})
 const savingProducts = reactive<Record<string, boolean>>({})
 const productFeedback = reactive<Record<string, string>>({})
+const selectedRows = reactive<Record<string, boolean>>({})
+const bulkOrderStatus = ref('')
+const bulkSaving = ref(false)
+const bulkFeedback = ref('')
+const sheetWrapRef = ref<HTMLElement | null>(null)
 
 const sheetRows = computed<SheetRow[]>(() =>
   ordersStore.orders.flatMap((order) =>
@@ -295,6 +356,7 @@ const sheetRows = computed<SheetRow[]>(() =>
 
 const productKey = (amazonOrderId: string, orderProductId: number) => `${amazonOrderId}:${orderProductId}`
 const formatDate = (dateString?: string | null) => formatStandardDate(dateString)
+const formatDateTime = (dateString?: string | null) => formatStandardDate(dateString)
 const formatText = (value?: string | null) => value?.trim() || 'Not available'
 const formatNumber = (value?: number | null) => (value == null ? 'Not set' : String(value))
 const numberToString = (value?: number | null) => (value == null ? '' : String(value))
@@ -360,11 +422,26 @@ const applyInchIncrement = (
 ) => {
   const mmField = field === 'customer_width_in_inches' ? 'customer_width_in_mm' : 'customer_length_in_mm'
   const currentInches = Number(edit[field] || 0)
-  const currentMM = Number(edit[mmField] || 0)
-  const baseMM = Number.isFinite(currentMM) && currentMM > 0 ? currentMM : currentInches * 25.4
-  const nextMM = baseMM + (delta * 25.4)
+  const nextInches = currentInches + delta
+  edit[mmField] = roundForInput(nextInches * 25.4)
+}
 
-  edit[mmField] = roundForInput(nextMM)
+const formatInchDifference = (
+  edit: ProductEditRow,
+  field: 'customer_width_in_inches' | 'customer_length_in_inches',
+) => {
+  const mmField = field === 'customer_width_in_inches' ? 'customer_width_in_mm' : 'customer_length_in_mm'
+  const mmValue = edit[mmField]
+
+  if (!mmValue || Number.isNaN(Number(mmValue))) {
+    return '+0.00 in'
+  }
+
+  const inches = Number(edit[field] || 0)
+  const delta = Number(mmValue) / 25.4 - (Number.isFinite(inches) ? inches : 0)
+  const normalized = Math.abs(delta) < 0.005 ? 0 : Math.round(delta * 100) / 100
+  const sign = normalized >= 0 ? '+' : '-'
+  return `${sign}${Math.abs(normalized).toFixed(2)} in`
 }
 
 const getRowStyle = (row: SheetRow) => rowHighlightRulesStore.getRowHighlightStyle(row.order, [row.product])
@@ -403,6 +480,35 @@ const visibleRows = computed<VisibleRow[]>(() => {
     }
   }, sortState.value.direction)
 })
+
+const selectedVisibleRows = computed(() => visibleRows.value.filter((row) => Boolean(selectedRows[row.rowKey])))
+const selectedVisibleRowCount = computed(() => selectedVisibleRows.value.length)
+const allVisibleRowsSelected = computed(() => visibleRows.value.length > 0 && selectedVisibleRows.value.length === visibleRows.value.length)
+
+const isRowSelected = (rowKey: string) => Boolean(selectedRows[rowKey])
+
+const setRowSelected = (rowKey: string, checked: boolean) => {
+  if (checked) {
+    selectedRows[rowKey] = true
+    return
+  }
+  delete selectedRows[rowKey]
+}
+
+const toggleVisibleRowsSelection = (checked: boolean) => {
+  for (const row of visibleRows.value) {
+    setRowSelected(row.rowKey, checked)
+  }
+}
+
+const pruneRowSelection = (allowedRowKeys: string[]) => {
+  const allowed = new Set(allowedRowKeys)
+  for (const rowKey of Object.keys(selectedRows)) {
+    if (!allowed.has(rowKey)) {
+      delete selectedRows[rowKey]
+    }
+  }
+}
 
 const buildSearchFilters = () => {
   const value = searchValue.value.trim()
@@ -532,6 +638,42 @@ const saveProductRow = async (row: VisibleRow) => {
   }
 }
 
+const applyBulkStatusUpdate = async () => {
+  if (!bulkOrderStatus.value || selectedVisibleRows.value.length === 0) return
+
+  bulkSaving.value = true
+  bulkFeedback.value = ''
+
+  try {
+    const selectedRowCount = selectedVisibleRows.value.length
+    const uniqueOrderIds = [...new Set(selectedVisibleRows.value.map((row) => row.order.amazon_order_id))]
+    for (const amazonOrderId of uniqueOrderIds) {
+      const updated = await withTimeout(
+        ordersStore.updateOrderManualFields(amazonOrderId, {
+          order_status: bulkOrderStatus.value,
+        }),
+        SAVE_TIMEOUT_MS,
+      )
+      orderEdits[amazonOrderId] = buildOrderEdit(updated)
+    }
+
+    syncProductEdits()
+    bulkFeedback.value = `Updated ${selectedRowCount} selected rows across ${uniqueOrderIds.length} orders`
+  } catch (error: any) {
+    bulkFeedback.value = error.response?.data?.error || error.message || 'Bulk update failed'
+  } finally {
+    bulkSaving.value = false
+  }
+}
+
+watch(
+  () => visibleRows.value.map((row) => row.rowKey),
+  (rowKeys) => {
+    pruneRowSelection(rowKeys)
+  },
+  { immediate: true },
+)
+
 onMounted(() => {
   void rowHighlightRulesStore.ensureLoaded()
   void applyFilters()
@@ -656,16 +798,50 @@ h1 {
   min-height: 100%;
 }
 
+.action-button--inline {
+  width: auto;
+  min-width: 13rem;
+  padding: 0 1rem;
+}
+
 .cnc-shell {
   padding: 0.8rem;
-  content-visibility: auto;
-  contain-intrinsic-size: 860px;
+}
+
+.bulk-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.9rem;
+}
+
+.bulk-toolbar__select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.bulk-toolbar__count,
+.bulk-toolbar__feedback {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #475569;
+}
+
+.sheet-input.bulk-toolbar__status {
+  flex: 0 0 clamp(11rem, 16vw, 13rem);
+  width: clamp(11rem, 16vw, 13rem);
+  max-width: 100%;
 }
 
 .sheet-wrap {
   overflow: auto;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-x pan-y;
+  padding-bottom: 0.35rem;
 }
 
 .cnc-sheet {
@@ -691,6 +867,12 @@ h1 {
 
 .cell-status-edit {
   min-width: 170px;
+}
+
+.cell-check {
+  width: 3.4rem;
+  min-width: 3.4rem;
+  text-align: center;
 }
 
 .cnc-sheet td {
@@ -758,6 +940,18 @@ h1 {
   font-weight: 800;
 }
 
+.increment-button--indicator {
+  min-width: 5.75rem;
+  justify-content: center;
+  background: #e2e8f0;
+  color: #334155;
+  cursor: default;
+}
+
+.increment-button--indicator:disabled {
+  opacity: 1;
+}
+
 .cell-actions {
   min-width: 9rem;
 }
@@ -815,6 +1009,15 @@ h1 {
 @media (max-width: 680px) {
   .cnc-filters {
     grid-template-columns: 1fr;
+  }
+
+  .bulk-toolbar {
+    align-items: stretch;
+  }
+
+  .sheet-input.bulk-toolbar__status,
+  .action-button--inline {
+    width: 100%;
   }
 }
 </style>

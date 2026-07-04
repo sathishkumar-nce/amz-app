@@ -18,7 +18,38 @@ export type ExtractedPdfOrderId = {
   pageNumber: number
 }
 
+function ensureReadableStreamAsyncIterator() {
+  const readableStreamPrototype = globalThis.ReadableStream?.prototype as
+    | (ReadableStream<unknown> & { [Symbol.asyncIterator]?: () => AsyncIterableIterator<unknown> })
+    | undefined
+
+  if (!readableStreamPrototype || typeof readableStreamPrototype[Symbol.asyncIterator] === 'function') {
+    return
+  }
+
+  Object.defineProperty(readableStreamPrototype, Symbol.asyncIterator, {
+    configurable: true,
+    writable: true,
+    value: async function* readableStreamAsyncIterator(this: ReadableStream<unknown>) {
+      const reader = this.getReader()
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) {
+            return
+          }
+          yield value
+        }
+      } finally {
+        reader.releaseLock()
+      }
+    },
+  })
+}
+
 export async function extractAmazonOrderIdsFromPdf(file: File): Promise<ExtractedPdfOrderId[]> {
+  ensureReadableStreamAsyncIterator()
+
   const data = new Uint8Array(await file.arrayBuffer())
   const loadingTask = getDocument({ data })
   const pdf = await loadingTask.promise

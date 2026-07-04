@@ -104,7 +104,7 @@
       </div>
 
       <template v-else>
-        <div class="table-wrap">
+        <div ref="tableWrapRef" class="table-wrap">
           <table class="orders-table">
             <thead>
               <tr>
@@ -230,6 +230,7 @@
             </tbody>
           </table>
         </div>
+        <StickyHorizontalScrollbar :target="tableWrapRef" always-visible />
 
         <PaginationControls
           :page="store.pagination.page"
@@ -250,6 +251,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import DirectOrderFilterBar from '@/components/DirectOrderFilterBar.vue'
 import DirectOrderSearchBar from '@/components/DirectOrderSearchBar.vue'
 import PaginationControls from '@/components/PaginationControls.vue'
+import StickyHorizontalScrollbar from '@/components/StickyHorizontalScrollbar.vue'
 import { useDirectOrdersStore } from '@/stores/directOrders'
 import type { DirectOrderFilters } from '@/types'
 import { buildDirectOrderAdvancedRequest, createDirectOrderAdvancedFilters } from '@/utils/directOrderListFilters'
@@ -266,6 +268,7 @@ const exportRange = ref({
   date_from: '',
   date_to: '',
 })
+const tableWrapRef = ref<HTMLElement | null>(null)
 const advancedFilters = ref(createDirectOrderAdvancedFilters())
 const searchKey = ref('order_id')
 const searchValue = ref('')

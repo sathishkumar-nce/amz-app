@@ -521,7 +521,7 @@
         <div v-for="index in 7" :key="`pending-skeleton-${index}`" class="skeleton skeleton--row" />
       </div>
       <div v-else-if="!sortedPendingRows.length" class="empty-card">No Data Available</div>
-      <div v-else class="table-wrap">
+      <div v-else ref="pendingTableWrapRef" class="table-wrap">
         <table class="data-table">
           <thead>
             <tr>
@@ -554,6 +554,7 @@
           </tbody>
         </table>
       </div>
+      <StickyHorizontalScrollbar :target="pendingTableWrapRef" />
     </section>
 
     <section class="table-card">
@@ -573,7 +574,7 @@
         <div v-for="index in 7" :key="`product-skeleton-${index}`" class="skeleton skeleton--row" />
       </div>
       <div v-else-if="!sortedTopProducts.length" class="empty-card">No Data Available</div>
-      <div v-else class="table-wrap">
+      <div v-else ref="productTableWrapRef" class="table-wrap">
         <table class="data-table">
           <thead>
             <tr>
@@ -601,6 +602,7 @@
           </tbody>
         </table>
       </div>
+      <StickyHorizontalScrollbar :target="productTableWrapRef" />
     </section>
 
     <section v-if="activeDrilldown" class="table-card table-card--accent">
@@ -620,7 +622,7 @@
       </header>
 
       <div v-if="!drilldownRows.length" class="empty-card">No Data Available</div>
-      <div v-else class="table-wrap">
+      <div v-else ref="drilldownTableWrapRef" class="table-wrap">
         <table class="data-table">
           <thead>
             <tr>
@@ -662,6 +664,7 @@
           </tbody>
         </table>
       </div>
+      <StickyHorizontalScrollbar :target="drilldownTableWrapRef" />
     </section>
 
     <div v-if="error" class="error-banner">{{ error }}</div>
@@ -670,6 +673,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import StickyHorizontalScrollbar from '@/components/StickyHorizontalScrollbar.vue'
 import {
   ArrowPathIcon,
   ArrowUturnLeftIcon,
@@ -723,6 +727,9 @@ type DrilldownState = {
 const dashboard = ref<ReturnsDashboardResponse | null>(null)
 const loading = ref(false)
 const error = ref('')
+const pendingTableWrapRef = ref<HTMLElement | null>(null)
+const productTableWrapRef = ref<HTMLElement | null>(null)
+const drilldownTableWrapRef = ref<HTMLElement | null>(null)
 const trendGranularity = ref<TrendGranularity>('daily')
 const activeDrilldown = ref<DrilldownState | null>(null)
 const pendingSortKey = ref<PendingSortKey>('updated_at')

@@ -52,7 +52,7 @@
           </button>
         </div>
 
-        <div class="table-wrap">
+        <div ref="tableWrapRef" class="table-wrap">
           <table class="users-table">
             <thead>
               <tr>
@@ -84,6 +84,7 @@
             </tbody>
           </table>
         </div>
+        <StickyHorizontalScrollbar :target="tableWrapRef" always-visible />
       </section>
     </template>
   </div>
@@ -92,6 +93,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { authApi } from '@/api/auth'
+import StickyHorizontalScrollbar from '@/components/StickyHorizontalScrollbar.vue'
 import { useAuthStore } from '@/stores/auth'
 import type { User } from '@/types'
 
@@ -101,6 +103,7 @@ const users = ref<User[]>([])
 const loading = ref(false)
 const creating = ref(false)
 const deletingUserId = ref<number | null>(null)
+const tableWrapRef = ref<HTMLElement | null>(null)
 const message = ref('')
 const error = ref('')
 const form = reactive({ username: '', email: '' })
