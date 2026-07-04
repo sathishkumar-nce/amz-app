@@ -15,22 +15,6 @@
       </div>
     </section>
 
-    <OrderSearchBar
-      v-model:searchKey="searchKey"
-      v-model:searchValue="searchValue"
-      v-model:searchOperator="searchOperator"
-      :loading="loadingPdf"
-      @search="applySearch"
-      @clear="clearSearch"
-    />
-
-    <OrderListFilterBar
-      v-model="advancedFilters"
-      :loading="loadingPdf"
-      @apply="applySearch"
-      @clear="clearSearch"
-    />
-
     <section class="upload-card">
       <div class="upload-card__copy">
         <h2>Upload PDFs</h2>
@@ -123,11 +107,29 @@
       <div v-else-if="visibleRows.length === 0" class="empty-state">No matching Amazon CNC rows found for the uploaded order IDs.</div>
 
       <template v-else>
+        <div class="cnc-shell__controls">
+          <OrderSearchBar
+            v-model:searchKey="searchKey"
+            v-model:searchValue="searchValue"
+            v-model:searchOperator="searchOperator"
+            :loading="loadingPdf"
+            @search="applySearch"
+            @clear="clearSearch"
+          />
+
+          <OrderListFilterBar
+            v-model="advancedFilters"
+            :loading="loadingPdf"
+            @apply="applySearch"
+            @clear="clearSearch"
+          />
+        </div>
+
         <ListUtilityBar
-          :total="sequenceOrders.length"
+          :total="visibleRows.length"
           :page="1"
           :total-pages="1"
-          item-label="orders"
+          item-label="rows"
           editable
           helper-text="This queue preserves the uploaded PDF order and does not auto-sort"
         />
@@ -367,15 +369,8 @@ const sequenceOrders = computed(() =>
     .filter((item): item is { entry: ExtractedEntry; order: Order } => item != null),
 )
 
-const filteredSequenceOrders = computed(() =>
-  sequenceOrders.value.filter(({ order }) =>
-    matchesAdvancedFilters(order, appliedAdvancedFilters.value) &&
-    matchesSearch(order, appliedSearchKey.value, appliedSearchValue.value, appliedSearchOperator.value),
-  ),
-)
-
-const visibleRows = computed<VisibleRow[]>(() =>
-  filteredSequenceOrders.value.flatMap(({ entry, order }) =>
+const baseRows = computed<VisibleRow[]>(() =>
+  sequenceOrders.value.flatMap(({ entry, order }) =>
     (order.products || [])
       .filter((product) => !product.is_discount_line)
       .map((product) => {
@@ -389,6 +384,18 @@ const visibleRows = computed<VisibleRow[]>(() =>
           orderEdit: ensureOrderEdit(order),
         }
       }),
+  ),
+)
+
+const visibleRows = computed<VisibleRow[]>(() =>
+  baseRows.value.filter((row) =>
+    matchesVisibleRowFilters(
+      row,
+      appliedAdvancedFilters.value,
+      appliedSearchKey.value,
+      appliedSearchValue.value,
+      appliedSearchOperator.value,
+    ),
   ),
 )
 
@@ -648,51 +655,47 @@ onMounted(() => {
   void rowHighlightRulesStore.ensureLoaded()
 })
 
-function matchesAdvancedFilters(order: Order, filters: OrderListAdvancedFilters) {
-  const confirmedAt = order.date_confirmed || order.date_add
+function matchesAdvancedFilters(row: VisibleRow, filters: OrderListAdvancedFilters) {
+  const confirmedAt = row.order.date_confirmed || row.order.date_add
   if (filters.confirmed_date_from && !matchesDateTimeRangeStart(confirmedAt, filters.confirmed_date_from)) {
     return false
   }
   if (filters.confirmed_date_to && !matchesDateTimeRangeEnd(confirmedAt, filters.confirmed_date_to)) {
     return false
   }
-  if (filters.priority && !matchesText(order.priority, filters.priority)) {
+  if (filters.priority && !matchesText(row.order.priority, filters.priority)) {
     return false
   }
-  if (filters.order_status && !matchesText(order.order_status, filters.order_status)) {
+  if (filters.order_status && !matchesText(row.order.order_status, filters.order_status)) {
     return false
   }
-  if (filters.thickness && !orderHasProduct(order, (product) => includesText(product.thickness, filters.thickness))) {
+  if (filters.thickness && !includesText(row.product.thickness, filters.thickness)) {
     return false
   }
-  if (filters.sku && !orderHasProduct(order, (product) => includesText(product.sku, filters.sku))) {
+  if (filters.sku && !includesText(row.product.sku, filters.sku)) {
     return false
   }
-  if (filters.is_round && !orderHasProduct(order, (product) => Boolean(product.is_round))) {
+  if (filters.is_round && !Boolean(row.product.is_round)) {
     return false
   }
-  if (filters.customer_inputs_mode === 'has_customer_inputs' && !orderHasCustomerInputs(order)) {
+  if (filters.customer_inputs_mode === 'has_customer_inputs' && !productHasCustomerInputs(row.product)) {
     return false
   }
-  if (filters.customer_inputs_mode === 'no_custom_inputs' && orderHasCustomerInputs(order)) {
+  if (filters.customer_inputs_mode === 'no_custom_inputs' && productHasCustomerInputs(row.product)) {
     return false
   }
-  if (filters.quantity && !orderHasProduct(order, (product) => compareNumber(product.quantity, filters.quantity, filters.quantity_operator))) {
+  if (filters.quantity && !compareNumber(row.product.quantity, filters.quantity, filters.quantity_operator)) {
     return false
   }
   if (
     filters.default_width_in_inches &&
-    !orderHasProduct(order, (product) =>
-      compareNumber(product.default_width_in_inches, filters.default_width_in_inches, filters.default_width_in_inches_operator),
-    )
+    !compareNumber(row.product.default_width_in_inches, filters.default_width_in_inches, filters.default_width_in_inches_operator)
   ) {
     return false
   }
   if (
     filters.default_length_in_inches &&
-    !orderHasProduct(order, (product) =>
-      compareNumber(product.default_length_in_inches, filters.default_length_in_inches, filters.default_length_in_inches_operator),
-    )
+    !compareNumber(row.product.default_length_in_inches, filters.default_length_in_inches, filters.default_length_in_inches_operator)
   ) {
     return false
   }
@@ -700,7 +703,7 @@ function matchesAdvancedFilters(order: Order, filters: OrderListAdvancedFilters)
 }
 
 function matchesSearch(
-  order: Order,
+  row: VisibleRow,
   key: string,
   value: string,
   operator: 'gt' | 'gte' | 'lt' | 'lte' | 'eq',
@@ -710,45 +713,52 @@ function matchesSearch(
 
   switch (key) {
     case 'order_id':
-      return includesText(order.amazon_order_id, trimmedValue)
+      return includesText(row.order.amazon_order_id, trimmedValue)
     case 'customer':
-      return includesText(order.delivery_fullname || order.user_login, trimmedValue)
+      return includesText(row.order.delivery_fullname || row.order.user_login, trimmedValue)
     case 'phone':
-      return includesText(order.phone, trimmedValue)
+      return includesText(row.order.phone, trimmedValue)
     case 'sku':
-      return orderHasProduct(order, (product) => includesText(product.sku, trimmedValue))
+      return includesText(row.product.sku, trimmedValue)
     case 'thickness':
-      return orderHasProduct(order, (product) => includesText(product.thickness, trimmedValue))
+      return includesText(row.product.thickness, trimmedValue)
     case 'priority':
-      return matchesText(order.priority, trimmedValue)
+      return matchesText(row.order.priority, trimmedValue)
     case 'is_round':
-      return orderHasProduct(order, (product) => String(Boolean(product.is_round)) === trimmedValue.toLowerCase())
+      return String(Boolean(row.product.is_round)) === trimmedValue.toLowerCase()
     case 'confirmed_date':
-      return matchesDateOnly(order.date_confirmed || order.date_add, trimmedValue)
+      return matchesDateOnly(row.order.date_confirmed || row.order.date_add, trimmedValue)
     case 'order_status':
-      return matchesText(order.order_status, trimmedValue)
+      return matchesText(row.order.order_status, trimmedValue)
     case 'default_width_in_inches':
-      return orderHasProduct(order, (product) => compareNumber(product.default_width_in_inches, trimmedValue, operator))
+      return compareNumber(row.product.default_width_in_inches, trimmedValue, operator)
     case 'default_length_in_inches':
-      return orderHasProduct(order, (product) => compareNumber(product.default_length_in_inches, trimmedValue, operator))
+      return compareNumber(row.product.default_length_in_inches, trimmedValue, operator)
     default:
       return true
   }
 }
 
-function orderHasProduct(order: Order, predicate: (product: OrderProduct) => boolean) {
-  return (order.products || []).some((product) => !product.is_discount_line && predicate(product))
+function matchesVisibleRowFilters(
+  row: VisibleRow,
+  filters: OrderListAdvancedFilters,
+  searchKey: string,
+  searchValue: string,
+  searchOperator: 'gt' | 'gte' | 'lt' | 'lte' | 'eq',
+) {
+  if (!matchesAdvancedFilters(row, filters)) {
+    return false
+  }
+  return matchesSearch(row, searchKey, searchValue, searchOperator)
 }
 
-function orderHasCustomerInputs(order: Order) {
-  return orderHasProduct(
-    order,
-    (product) =>
-      product.customer_width_in_inches != null ||
-      product.customer_length_in_inches != null ||
-      product.customer_width_in_mm != null ||
-      product.customer_length_in_mm != null ||
-      Boolean(product.corner_radius_and_notes?.trim()),
+function productHasCustomerInputs(product: OrderProduct) {
+  return (
+    product.customer_width_in_inches != null ||
+    product.customer_length_in_inches != null ||
+    product.customer_width_in_mm != null ||
+    product.customer_length_in_mm != null ||
+    Boolean(product.corner_radius_and_notes?.trim())
   )
 }
 
@@ -896,6 +906,16 @@ h1 {
 .sequence-card,
 .cnc-shell {
   padding: 1.2rem;
+}
+
+.cnc-shell {
+  display: grid;
+  gap: 1rem;
+}
+
+.cnc-shell__controls {
+  display: grid;
+  gap: 1rem;
 }
 
 .upload-card {
