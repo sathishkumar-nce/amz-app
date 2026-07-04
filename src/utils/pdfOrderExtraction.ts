@@ -1,7 +1,9 @@
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist'
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url'
 
-GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+GlobalWorkerOptions.workerPort = new Worker(
+  new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url),
+  { type: 'module' },
+)
 
 const AMAZON_ORDER_ID_PATTERN = /\b\d{3}-\d{7}-\d{7}\b/g
 
