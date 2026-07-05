@@ -377,6 +377,7 @@
                     'row-attention--qty': getRowAttentionTone(row) === 'qty',
                     'row-attention--round': getRowAttentionTone(row) === 'round',
                     'row-attention--special': getRowAttentionTone(row) === 'special',
+                    'row-attention--duplicate': getRowAttentionTone(row) === 'duplicate',
                   }"
                   :style="getRowStyle(row)"
                 >
@@ -401,6 +402,7 @@
                           'order-id-line--qty': getRowAttentionTone(row) === 'qty',
                           'order-id-line--round': getRowAttentionTone(row) === 'round',
                           'order-id-line--special': getRowAttentionTone(row) === 'special',
+                          'order-id-line--duplicate': getRowAttentionTone(row) === 'duplicate',
                         },
                       ]"
                     >
@@ -753,6 +755,13 @@ const rowLookup = computed(() => {
     lookup.set(row.rowKey, row)
   }
   return lookup
+})
+const duplicateOrderRowCounts = computed(() => {
+  const counts = new Map<string, number>()
+  for (const row of baseRows.value) {
+    counts.set(row.order.amazon_order_id, (counts.get(row.order.amazon_order_id) || 0) + 1)
+  }
+  return counts
 })
 
 const formatDate = (dateString?: string | null) => formatStandardDate(dateString)
@@ -1769,9 +1778,14 @@ function rowHasSpecialNotes(row: VisibleRow) {
   return /\[special\]/i.test(row.productEdit.corner_radius_and_notes || row.product.corner_radius_and_notes || '')
 }
 
-function getRowAttentionTone(row: VisibleRow): 'qty' | 'round' | 'special' | null {
+function rowHasDuplicateOrderRows(row: VisibleRow) {
+  return (duplicateOrderRowCounts.value.get(row.order.amazon_order_id) || 0) > 1
+}
+
+function getRowAttentionTone(row: VisibleRow): 'qty' | 'round' | 'special' | 'duplicate' | null {
   if (rowHasRoundProduct(row)) return 'round'
   if (rowHasSpecialNotes(row)) return 'special'
+  if (rowHasDuplicateOrderRows(row)) return 'duplicate'
   if (rowHasMultiQuantity(row)) return 'qty'
   return null
 }
@@ -2690,6 +2704,10 @@ h1 {
   --attention-color: #a16207;
 }
 
+.row-attention--duplicate > td {
+  --attention-color: #1d4ed8;
+}
+
 .cell-check {
   width: 2.8rem;
   min-width: 2.8rem;
@@ -2896,6 +2914,10 @@ h1 {
 
 .order-id-line--special {
   color: #a16207;
+}
+
+.order-id-line--duplicate {
+  color: #1d4ed8;
 }
 
 .order-subline {
