@@ -173,6 +173,100 @@
       <div v-else-if="!extractedEntries.length" class="empty-state">Upload PDFs to build a CNC queue from their order sequence.</div>
       <template v-else>
         <div class="cnc-shell__controls">
+          <div class="row-order-lanes-card">
+            <div class="row-order-lanes-card__header">
+              <div>
+                <h3>Row Order Lanes</h3>
+                <p>Move cards into the active lane. Rows follow that top-to-bottom rule order, then the remaining rows keep their original PDF sequence.</p>
+              </div>
+              <span class="summary-pill">{{ activeRowOrderRules.length }} active</span>
+            </div>
+
+            <div class="row-order-lanes">
+              <section
+                class="row-order-lane"
+                @dragover.prevent="handleRowOrderRuleDragOver"
+                @drop.prevent="handleRowOrderRuleDrop('available')"
+              >
+                <div class="row-order-lane__header">
+                  <strong>Available</strong>
+                  <span>{{ availableRowOrderRules.length }}</span>
+                </div>
+                <div class="row-order-lane__body" :class="{ 'row-order-lane__body--empty': availableRowOrderRules.length === 0 }">
+                  <p v-if="availableRowOrderRules.length === 0" class="row-order-lane__empty">No cards left in this lane.</p>
+                  <article
+                    v-for="(rule, index) in availableRowOrderRules"
+                    :key="`available-${rule.key}`"
+                    class="row-order-rule-card"
+                    draggable="true"
+                    @dragstart="handleRowOrderRuleDragStart($event, rule.key, 'available')"
+                    @dragend="clearDraggedRowOrderRule"
+                    @dragover.prevent="handleRowOrderRuleDragOver"
+                    @drop.prevent.stop="handleRowOrderRuleDrop('available', index)"
+                  >
+                    <div class="row-order-rule-card__copy">
+                      <strong>{{ rule.label }}</strong>
+                      <span>{{ rule.description }}</span>
+                    </div>
+                    <button type="button" class="row-order-rule-card__action" @click.stop="toggleRowOrderRuleLane(rule.key, 'available')">
+                      Add
+                    </button>
+                  </article>
+                </div>
+              </section>
+
+              <section
+                class="row-order-lane row-order-lane--active"
+                @dragover.prevent="handleRowOrderRuleDragOver"
+                @drop.prevent="handleRowOrderRuleDrop('active')"
+              >
+                <div class="row-order-lane__header">
+                  <strong>Active Order</strong>
+                  <span>{{ activeRowOrderRules.length }}</span>
+                </div>
+                <div class="row-order-lane__body" :class="{ 'row-order-lane__body--empty': activeRowOrderRules.length === 0 }">
+                  <p v-if="activeRowOrderRules.length === 0" class="row-order-lane__empty">Drop cards here to prioritize matching rows.</p>
+                  <article
+                    v-for="(rule, index) in activeRowOrderRules"
+                    :key="`active-${rule.key}`"
+                    class="row-order-rule-card row-order-rule-card--active"
+                    draggable="true"
+                    @dragstart="handleRowOrderRuleDragStart($event, rule.key, 'active')"
+                    @dragend="clearDraggedRowOrderRule"
+                    @dragover.prevent="handleRowOrderRuleDragOver"
+                    @drop.prevent.stop="handleRowOrderRuleDrop('active', index)"
+                  >
+                    <div class="row-order-rule-card__copy">
+                      <strong>{{ rule.label }}</strong>
+                      <span>{{ rule.description }}</span>
+                    </div>
+                    <div class="row-order-rule-card__actions">
+                      <button
+                        type="button"
+                        class="row-order-rule-card__action"
+                        :disabled="index === 0"
+                        @click.stop="shiftActiveRowOrderRule(rule.key, -1)"
+                      >
+                        Up
+                      </button>
+                      <button
+                        type="button"
+                        class="row-order-rule-card__action"
+                        :disabled="index === activeRowOrderRules.length - 1"
+                        @click.stop="shiftActiveRowOrderRule(rule.key, 1)"
+                      >
+                        Down
+                      </button>
+                      <button type="button" class="row-order-rule-card__action" @click.stop="toggleRowOrderRuleLane(rule.key, 'active')">
+                        Remove
+                      </button>
+                    </div>
+                  </article>
+                </div>
+              </section>
+            </div>
+          </div>
+
           <div class="bulk-toolbar">
             <label class="bulk-toolbar__select-all">
               <input
@@ -235,7 +329,7 @@
           :total-pages="1"
           item-label="rows"
           editable
-          helper-text="This queue preserves the uploaded PDF order and does not auto-sort"
+          :helper-text="listUtilityHelperText"
         />
         <div v-if="visibleRows.length === 0" class="empty-state empty-state--inline">
           No matching Amazon CNC rows found for the current filter/search selection.
@@ -282,7 +376,10 @@
                 <tr
                   v-for="row in visibleRows"
                   :key="row.rowKey"
-                  :class="{ 'row-updated': isRowUpdated(row.rowKey) }"
+                  :class="{
+                    'row-has-custom-inputs': rowWasInitiallyCustom(row.rowKey),
+                    'row-updated': isRowUpdated(row.rowKey),
+                  }"
                   :style="getRowStyle(row)"
                 >
                   <td class="cell-check">
@@ -466,12 +563,20 @@ type VisibleRow = SheetRow & {
 }
 
 type RemoteTrackedField = 'customer_width_in_inches' | 'customer_length_in_inches' | 'corner_radius_and_notes'
+type RowOrderRuleKey = 'manufactured' | 'has_custom_inputs' | 'no_custom_inputs' | 'is_round' | 'more_than_1_qty'
+type RowOrderLaneKey = 'available' | 'active'
 
 type RemoteUpdateToast = {
   id: number
   orderId: string
   message: string
   createdAt: string
+}
+
+type RowOrderRuleCard = {
+  key: RowOrderRuleKey
+  label: string
+  description: string
 }
 
 type RemoteFieldChange = {
@@ -497,6 +602,42 @@ const REMOTE_FIELD_LABELS: Record<RemoteTrackedField, string> = {
   corner_radius_and_notes: 'Corner radius and notes',
 }
 
+const ROW_ORDER_RULES: Record<RowOrderRuleKey, RowOrderRuleCard> = {
+  manufactured: {
+    key: 'manufactured',
+    label: 'Manufactured',
+    description: 'Rows with order status manufactured',
+  },
+  has_custom_inputs: {
+    key: 'has_custom_inputs',
+    label: 'Has Custom Inputs',
+    description: 'Rows with any customer-entered size or notes',
+  },
+  no_custom_inputs: {
+    key: 'no_custom_inputs',
+    label: 'No Custom Inputs',
+    description: 'Rows without customer-entered size or notes',
+  },
+  is_round: {
+    key: 'is_round',
+    label: 'Is Round',
+    description: 'Rows marked as round products',
+  },
+  more_than_1_qty: {
+    key: 'more_than_1_qty',
+    label: 'More Than 1 Qty',
+    description: 'Rows where quantity is greater than 1',
+  },
+}
+
+const DEFAULT_ROW_ORDER_RULE_KEYS: RowOrderRuleKey[] = [
+  'manufactured',
+  'has_custom_inputs',
+  'no_custom_inputs',
+  'is_round',
+  'more_than_1_qty',
+]
+
 const loadingPdf = ref(false)
 const uploadError = ref('')
 const uploadWarning = ref('')
@@ -513,6 +654,7 @@ const productEdits = reactive<Record<string, ProductEditRow>>({})
 const orderEdits = reactive<Record<string, OrderEditRow>>({})
 const savingProducts = reactive<Record<string, boolean>>({})
 const productFeedback = reactive<Record<string, string>>({})
+const initialCustomInputRows = reactive<Record<string, boolean>>({})
 const rowUpdateHighlights = reactive<Record<string, boolean>>({})
 const cellUpdateHighlights = reactive<Record<string, boolean>>({})
 const remoteUpdateToasts = ref<RemoteUpdateToast[]>([])
@@ -522,10 +664,13 @@ const selectedRows = reactive<Record<string, boolean>>({})
 const bulkOrderStatus = ref('')
 const bulkSaving = ref(false)
 const bulkFeedback = ref('')
+const availableRowOrderRuleKeys = ref<RowOrderRuleKey[]>([...DEFAULT_ROW_ORDER_RULE_KEYS])
+const activeRowOrderRuleKeys = ref<RowOrderRuleKey[]>([])
 const sheetWrapRef = ref<HTMLElement | null>(null)
 
 let pollTimerId: number | undefined
 let toastSequence = 0
+let draggedRowOrderRule: { key: RowOrderRuleKey; fromLane: RowOrderLaneKey } | null = null
 const toastTimers = new Map<number, number>()
 
 const extractedOrderIdCount = computed(() => extractedEntries.value.length)
@@ -538,6 +683,13 @@ const redundantQueueWarning = computed(() =>
   redundantOrderEntries.value.length
     ? `Removed ${redundantOrderEntries.value.length} redundant order ID entries from later PDFs. See details below.`
     : '',
+)
+const availableRowOrderRules = computed(() => availableRowOrderRuleKeys.value.map((key) => ROW_ORDER_RULES[key]))
+const activeRowOrderRules = computed(() => activeRowOrderRuleKeys.value.map((key) => ROW_ORDER_RULES[key]))
+const listUtilityHelperText = computed(() =>
+  activeRowOrderRuleKeys.value.length > 0
+    ? 'Rows are grouped by the active row-order cards, then remaining rows follow the original PDF sequence'
+    : 'This queue preserves the uploaded PDF order and does not auto-sort',
 )
 
 const sequenceOrders = computed(() =>
@@ -569,7 +721,7 @@ const baseRows = computed<VisibleRow[]>(() =>
   ),
 )
 
-const visibleRows = computed<VisibleRow[]>(() =>
+const filteredRows = computed<VisibleRow[]>(() =>
   baseRows.value.filter((row) =>
     matchesVisibleRowFilters(
       row,
@@ -580,6 +732,8 @@ const visibleRows = computed<VisibleRow[]>(() =>
     ),
   ),
 )
+
+const visibleRows = computed<VisibleRow[]>(() => orderRowsByActiveRules(filteredRows.value, activeRowOrderRuleKeys.value))
 
 const formatDate = (dateString?: string | null) => formatStandardDate(dateString)
 const formatDateTime = (dateString?: string | null) => formatStandardDate(dateString)
@@ -625,6 +779,16 @@ const syncProductEdits = () => {
     orderEdits[row.order.amazon_order_id] = buildOrderEdit(row.order)
     savingProducts[row.rowKey] = false
     productFeedback[row.rowKey] = ''
+  }
+}
+
+const captureInitialCustomInputRows = () => {
+  for (const key of Object.keys(initialCustomInputRows)) {
+    delete initialCustomInputRows[key]
+  }
+
+  for (const row of baseRows.value) {
+    initialCustomInputRows[row.rowKey] = productHasInitialCustomInputs(row.product)
   }
 }
 
@@ -796,7 +960,76 @@ const clearSearch = () => {
   appliedAdvancedFilters.value = createOrderListAdvancedFilters()
 }
 
+const clearDraggedRowOrderRule = () => {
+  draggedRowOrderRule = null
+}
+
+const handleRowOrderRuleDragStart = (event: DragEvent, ruleKey: RowOrderRuleKey, fromLane: RowOrderLaneKey) => {
+  draggedRowOrderRule = {
+    key: ruleKey,
+    fromLane,
+  }
+
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.dropEffect = 'move'
+    event.dataTransfer.setData('text/plain', ruleKey)
+  }
+}
+
+const handleRowOrderRuleDragOver = (event: DragEvent) => {
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'move'
+  }
+}
+
+const moveRowOrderRule = (ruleKey: RowOrderRuleKey, targetLane: RowOrderLaneKey, targetIndex?: number) => {
+  const nextAvailable = availableRowOrderRuleKeys.value.filter((key) => key !== ruleKey)
+  const nextActive = activeRowOrderRuleKeys.value.filter((key) => key !== ruleKey)
+  const targetKeys = targetLane === 'available' ? nextAvailable : nextActive
+  const sourceKeys = draggedRowOrderRule?.fromLane === 'available' ? availableRowOrderRuleKeys.value : activeRowOrderRuleKeys.value
+  const sourceIndex = sourceKeys.indexOf(ruleKey)
+  let normalizedIndex =
+    targetIndex == null ? targetKeys.length : Math.min(Math.max(targetIndex, 0), targetKeys.length)
+
+  // Preserve intuitive "drop before target card" behavior when reordering inside the same lane.
+  if (draggedRowOrderRule?.fromLane === targetLane && sourceIndex >= 0 && targetIndex != null && sourceIndex < targetIndex) {
+    normalizedIndex -= 1
+  }
+
+  targetKeys.splice(normalizedIndex, 0, ruleKey)
+
+  availableRowOrderRuleKeys.value = nextAvailable
+  activeRowOrderRuleKeys.value = nextActive
+}
+
+const handleRowOrderRuleDrop = (targetLane: RowOrderLaneKey, targetIndex?: number) => {
+  if (!draggedRowOrderRule) return
+  moveRowOrderRule(draggedRowOrderRule.key, targetLane, targetIndex)
+  clearDraggedRowOrderRule()
+}
+
+const toggleRowOrderRuleLane = (ruleKey: RowOrderRuleKey, currentLane: RowOrderLaneKey) => {
+  moveRowOrderRule(ruleKey, currentLane === 'available' ? 'active' : 'available')
+}
+
+const shiftActiveRowOrderRule = (ruleKey: RowOrderRuleKey, direction: -1 | 1) => {
+  const currentIndex = activeRowOrderRuleKeys.value.indexOf(ruleKey)
+  if (currentIndex === -1) return
+
+  const nextIndex = currentIndex + direction
+  if (nextIndex < 0 || nextIndex >= activeRowOrderRuleKeys.value.length) return
+
+  const nextKeys = [...activeRowOrderRuleKeys.value]
+  nextKeys.splice(currentIndex, 1)
+  nextKeys.splice(nextIndex, 0, ruleKey)
+  activeRowOrderRuleKeys.value = nextKeys
+}
+
 const resetRowState = () => {
+  for (const key of Object.keys(initialCustomInputRows)) {
+    delete initialCustomInputRows[key]
+  }
   for (const key of Object.keys(productEdits)) {
     delete productEdits[key]
   }
@@ -827,6 +1060,7 @@ const refreshQueueResults = async () => {
   await pdfQueueStore.refreshLookupResults()
   syncOrdersStore(lookupResults.value)
   syncProductEdits()
+  captureInitialCustomInputRows()
 
   if (!lookupResults.value.some((result) => result.found && result.order)) {
     uploadError.value = 'The PDFs contained order IDs, but none of them matched Amazon orders in the app.'
@@ -1207,6 +1441,7 @@ const restoreQueueState = async () => {
   if (lookupResults.value.length === extractedEntries.value.length) {
     syncOrdersStore(lookupResults.value)
     syncProductEdits()
+    captureInitialCustomInputRows()
     if (!lastSuccessfulSyncAt.value) {
       lastSuccessfulSyncAt.value = new Date().toISOString()
     }
@@ -1345,6 +1580,72 @@ function productHasCustomerInputs(product: OrderProduct) {
     product.customer_length_in_mm != null ||
     Boolean(product.corner_radius_and_notes?.trim())
   )
+}
+
+function rowWasInitiallyCustom(rowKey: string) {
+  return Boolean(initialCustomInputRows[rowKey])
+}
+
+function productHasInitialCustomInputs(product: OrderProduct) {
+  return (
+    product.customer_width_in_inches != null ||
+    product.customer_length_in_inches != null ||
+    Boolean(product.corner_radius_and_notes?.trim())
+  )
+}
+
+function rowMatchesOrderRule(row: VisibleRow, ruleKey: RowOrderRuleKey) {
+  switch (ruleKey) {
+    case 'manufactured':
+      return matchesText(row.order.order_status, 'manufactured')
+    case 'has_custom_inputs':
+      return productHasCustomerInputs(row.product)
+    case 'no_custom_inputs':
+      return !productHasCustomerInputs(row.product)
+    case 'is_round':
+      return Boolean(row.product.is_round)
+    case 'more_than_1_qty':
+      return Number(row.product.quantity ?? 0) > 1
+  }
+}
+
+function orderRowsByActiveRules(rows: VisibleRow[], activeRuleKeys: RowOrderRuleKey[]) {
+  if (activeRuleKeys.length === 0) {
+    return rows
+  }
+
+  const prioritizedRows: VisibleRow[] = []
+  let remainingRows = [...rows]
+
+  for (const ruleKey of activeRuleKeys) {
+    const matchedRows: VisibleRow[] = []
+    const nextRemainingRows: VisibleRow[] = []
+
+    for (const row of remainingRows) {
+      if (rowMatchesOrderRule(row, ruleKey)) {
+        matchedRows.push(row)
+      } else {
+        nextRemainingRows.push(row)
+      }
+    }
+
+    if (ruleKey === 'has_custom_inputs') {
+      const initialCustomRows = matchedRows.filter((row) => rowWasInitiallyCustom(row.rowKey))
+      const realtimeCustomRows = matchedRows.filter(
+        (row) => !rowWasInitiallyCustom(row.rowKey) && isRowUpdated(row.rowKey),
+      )
+      const otherCustomRows = matchedRows.filter(
+        (row) => !rowWasInitiallyCustom(row.rowKey) && !isRowUpdated(row.rowKey),
+      )
+
+      prioritizedRows.push(...initialCustomRows, ...otherCustomRows, ...realtimeCustomRows)
+    } else {
+      prioritizedRows.push(...matchedRows)
+    }
+    remainingRows = nextRemainingRows
+  }
+
+  return [...prioritizedRows, ...remainingRows]
 }
 
 function includesText(source?: string | null, target?: string | null) {
@@ -1539,6 +1840,150 @@ h1 {
   gap: 1rem;
 }
 
+.row-order-lanes-card {
+  display: grid;
+  gap: 0.9rem;
+  padding: 0.95rem 1rem;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: linear-gradient(135deg, rgba(248, 250, 252, 0.98), rgba(255, 255, 255, 0.98));
+}
+
+.row-order-lanes-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.row-order-lanes-card__header p {
+  margin: 0.38rem 0 0;
+  color: #475569;
+  max-width: 70ch;
+  font-size: 0.88rem;
+}
+
+.row-order-lanes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.row-order-lane {
+  display: grid;
+  gap: 0.72rem;
+  padding: 0.85rem;
+  border-radius: 16px;
+  border: 1px dashed rgba(148, 163, 184, 0.45);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.row-order-lane--active {
+  border-color: rgba(2, 132, 199, 0.32);
+  background: rgba(239, 246, 255, 0.72);
+}
+
+.row-order-lane__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: #0f172a;
+}
+
+.row-order-lane__header strong {
+  font-size: 0.92rem;
+}
+
+.row-order-lane__header span {
+  color: #475569;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.row-order-lane__body {
+  display: grid;
+  gap: 0.55rem;
+  min-height: 3.2rem;
+}
+
+.row-order-lane__body--empty {
+  align-content: center;
+}
+
+.row-order-lane__empty {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.83rem;
+  font-weight: 700;
+}
+
+.row-order-rule-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: #ffffff;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
+  cursor: grab;
+}
+
+.row-order-rule-card--active {
+  border-color: rgba(14, 165, 233, 0.24);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(239, 246, 255, 0.88));
+}
+
+.row-order-rule-card:active {
+  cursor: grabbing;
+}
+
+.row-order-rule-card__copy {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.row-order-rule-card__copy strong {
+  color: #0f172a;
+  font-size: 0.9rem;
+}
+
+.row-order-rule-card__copy span {
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.row-order-rule-card__action {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 999px;
+  padding: 0.42rem 0.72rem;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: 0.75rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.row-order-rule-card__action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.row-order-rule-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .bulk-toolbar {
   display: flex;
   align-items: center;
@@ -1576,6 +2021,12 @@ h1 {
   min-width: 8.5rem;
 }
 
+.row-has-custom-inputs > td {
+  background: rgba(236, 255, 186, 0.9) !important;
+  transition: background-color 0.25s ease;
+}
+
+.row-has-custom-inputs.row-updated > td,
 .row-updated > td {
   background: rgba(255, 237, 213, 0.88) !important;
   transition: background-color 0.25s ease;
@@ -2219,6 +2670,14 @@ h1 {
 
   .bulk-toolbar {
     align-items: stretch;
+  }
+
+  .row-order-lanes {
+    grid-template-columns: 1fr;
+  }
+
+  .row-order-rule-card {
+    align-items: flex-start;
   }
 
   .redundant-order-card {
