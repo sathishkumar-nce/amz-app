@@ -1049,7 +1049,7 @@ h1 {
 .ops-table td:nth-child(9),
 .ops-table th:nth-child(10),
 .ops-table td:nth-child(10) {
-  min-width: 5.6rem;
+  min-width: 4.6rem;
 }
 
 .ops-table th:nth-child(11),
@@ -1079,13 +1079,11 @@ h1 {
 }
 
 .increment-row {
-  margin-top: 0.45rem;
-  display: flex;
-  gap: 0.45rem;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  white-space: nowrap;
-  scrollbar-width: thin;
+  margin-top: 0.4rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.32rem;
+  white-space: normal;
 }
 
 .increment-button,
@@ -1100,8 +1098,9 @@ h1 {
   border-radius: 999px;
   background: #dbeafe;
   color: #1d4ed8;
-  padding: 0.3rem 0.58rem;
-  font-size: 0.74rem;
+  padding: 0.24rem 0.3rem;
+  font-size: 0.68rem;
+  text-align: center;
 }
 
 .increment-button--indicator {
