@@ -87,7 +87,18 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in rows" :key="row.rowKey" :class="rowHighlightClass(row.orderEdit.order_status)">
+              <tr
+                v-for="row in rows"
+                :key="row.rowKey"
+                :class="[
+                  rowHighlightClass(row.orderEdit.order_status),
+                  {
+                    'row-attention': rowNeedsAttention(row),
+                    'row-attention--qty': getRowAttentionTone(row) === 'qty',
+                    'row-attention--special': getRowAttentionTone(row) === 'special',
+                  },
+                ]"
+              >
                 <td class="cell-check">
                   <input
                     :checked="isRowSelected(row.rowKey)"
@@ -96,7 +107,18 @@
                   />
                 </td>
                 <td>
-                  <div class="cell-title">{{ row.order.order_id }}</div>
+                  <div
+                    :class="[
+                      'cell-title',
+                      {
+                        'cell-title--attention': rowNeedsAttention(row),
+                        'cell-title--qty': getRowAttentionTone(row) === 'qty',
+                        'cell-title--special': getRowAttentionTone(row) === 'special',
+                      },
+                    ]"
+                  >
+                    {{ row.order.order_id }}
+                  </div>
                   <div class="cell-subtitle">{{ row.order.mobile || 'No mobile' }}</div>
                 </td>
                 <td>{{ formatDate(row.order.created_at) }}</td>
@@ -139,7 +161,7 @@
                   </div>
                 </td>
                 <td class="cell-dimension">
-                  <input v-model="row.itemEdit.customer_width_in_mm" type="number" step="0.01" class="sheet-input" />
+                  <input v-model="row.itemEdit.customer_width_in_mm" type="number" step="0.01" class="sheet-input" @input="scheduleItemFieldAutoSave(row)" />
                   <div class="increment-row">
                     <button type="button" class="increment-button increment-button--indicator" disabled>
                       {{ formatInchDifference(row.itemEdit, 'customer_width_in_inches') }}
@@ -147,7 +169,7 @@
                   </div>
                 </td>
                 <td class="cell-dimension">
-                  <input v-model="row.itemEdit.customer_length_in_mm" type="number" step="0.01" class="sheet-input" />
+                  <input v-model="row.itemEdit.customer_length_in_mm" type="number" step="0.01" class="sheet-input" @input="scheduleItemFieldAutoSave(row)" />
                   <div class="increment-row">
                     <button type="button" class="increment-button increment-button--indicator" disabled>
                       {{ formatInchDifference(row.itemEdit, 'customer_length_in_inches') }}
@@ -155,7 +177,7 @@
                   </div>
                 </td>
                 <td class="cell-notes">
-                  <input v-model="row.itemEdit.corner_radius_and_notes" type="text" class="sheet-input" />
+                  <input v-model="row.itemEdit.corner_radius_and_notes" type="text" class="sheet-input" @input="scheduleItemFieldAutoSave(row)" />
                 </td>
                 <td class="cell-actions">
                   <button type="button" class="btn btn-primary btn-block" :disabled="Boolean(savingRows[row.rowKey])" @click="saveRow(row)">
@@ -186,7 +208,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { directOrdersApi } from '@/api/directOrders'
 import DirectOrderFilterBar from '@/components/DirectOrderFilterBar.vue'
 import DirectOrderSearchBar from '@/components/DirectOrderSearchBar.vue'
 import PaginationControls from '@/components/PaginationControls.vue'
@@ -219,6 +242,8 @@ type VisibleRow = {
 
 const store = useDirectOrdersStore()
 const incrementSteps = [0, 0.1, 0.2, 0.25, 0.5, 0.75, 1]
+const SAVE_TIMEOUT_MS = 15000
+const AUTO_SAVE_DEBOUNCE_MS = 500
 const issueRequiredStatuses = new Set(['cancelled', 'on-hold', 'other-issues', 'returned'])
 const orderStatusOptions = ['confirmed', 'manufactured', 'on-hold', 'forwarded', 'cancelled', 'returned', 'other-issues']
 const advancedFilters = ref(createDirectOrderAdvancedFilters())
@@ -239,6 +264,10 @@ const bulkOrderStatus = ref('')
 const bulkSaving = ref(false)
 const bulkFeedback = ref('')
 const tableWrapRef = ref<HTMLElement | null>(null)
+const autoSaveTimers = new Map<string, number>()
+const autoSaveRowCache = new Map<string, VisibleRow>()
+const queuedAutoSaveKeys = new Set<string>()
+const activeSavePromises = new Map<string, Promise<void>>()
 const numberToString = (value?: number | null) => (value == null ? '' : String(value))
 const toOptionalNumber = (value?: string | null) => {
   if (!value?.trim()) return undefined
@@ -290,6 +319,13 @@ const rows = computed<VisibleRow[]>(() =>
     }),
   ),
 )
+const rowLookup = computed(() => {
+  const lookup = new Map<string, VisibleRow>()
+  for (const row of rows.value) {
+    lookup.set(row.rowKey, row)
+  }
+  return lookup
+})
 
 const selectedVisibleRows = computed(() => rows.value.filter((row) => Boolean(selectedRows[row.rowKey])))
 const selectedVisibleRowCount = computed(() => selectedVisibleRows.value.length)
@@ -370,6 +406,71 @@ const formatInchDifference = (
   const sign = normalized >= 0 ? '+' : '-'
   return `${sign}${Math.abs(normalized).toFixed(2)} in`
 }
+
+const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number) => {
+  let timeoutId: number | undefined
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = window.setTimeout(() => {
+      reject(new Error('Save timed out. Please try again.'))
+    }, timeoutMs)
+  })
+
+  try {
+    return await Promise.race([promise, timeoutPromise])
+  } finally {
+    if (timeoutId) {
+      window.clearTimeout(timeoutId)
+    }
+  }
+}
+
+const syncUpdatedOrder = (orderId: string, updated: DirectOrder) => {
+  store.orders = store.orders.map((order) => (order.order_id === orderId ? updated : order))
+  if (store.currentOrder?.order_id === orderId) {
+    store.currentOrder = updated
+  }
+}
+
+const clearAutoSaveTimer = (rowKey: string) => {
+  const timerId = autoSaveTimers.get(rowKey)
+  if (timerId == null) return
+  window.clearTimeout(timerId)
+  autoSaveTimers.delete(rowKey)
+}
+
+const queueAutoSave = (rowKey: string, delay = AUTO_SAVE_DEBOUNCE_MS) => {
+  clearAutoSaveTimer(rowKey)
+  autoSaveTimers.set(
+    rowKey,
+    window.setTimeout(() => {
+      autoSaveTimers.delete(rowKey)
+      if (activeSavePromises.has(rowKey)) {
+        queuedAutoSaveKeys.add(rowKey)
+        return
+      }
+      void autoSaveRowByKey(rowKey)
+    }, delay),
+  )
+}
+
+const scheduleItemFieldAutoSave = (row: VisibleRow) => {
+  autoSaveRowCache.set(row.rowKey, row)
+  queueAutoSave(row.rowKey)
+}
+
+const rowHasMultiQuantity = (row: VisibleRow) => Number(row.item.quantity ?? 0) > 1
+
+const rowHasSpecialNotes = (row: VisibleRow) =>
+  /\[special\]/i.test(row.itemEdit.corner_radius_and_notes || row.item.corner_radius_and_notes || '')
+
+const getRowAttentionTone = (row: VisibleRow): 'qty' | 'special' | null => {
+  if (rowHasSpecialNotes(row)) return 'special'
+  if (rowHasMultiQuantity(row)) return 'qty'
+  return null
+}
+
+const rowNeedsAttention = (row: VisibleRow) => getRowAttentionTone(row) !== null
 
 const resolveBulkIssues = (status: string) => {
   if (!issueRequiredStatuses.has(status)) {
@@ -486,7 +587,64 @@ const buildUpdatedItems = (order: DirectOrder, targetIndex: number, edit: ItemEd
     corner_radius_and_notes: index === targetIndex ? (edit.corner_radius_and_notes.trim() || undefined) : item.corner_radius_and_notes ?? undefined,
   }))
 
+const resolveRowForSave = (rowKey: string) => rowLookup.value.get(rowKey) ?? autoSaveRowCache.get(rowKey)
+
+const autoSaveRowByKey = async (rowKey: string) => {
+  if (activeSavePromises.has(rowKey)) {
+    queuedAutoSaveKeys.add(rowKey)
+    return
+  }
+
+  const row = resolveRowForSave(rowKey)
+  if (!row) return
+
+  const key = row.rowKey
+  clearAutoSaveTimer(key)
+  queuedAutoSaveKeys.delete(key)
+
+  const request = (async () => {
+    try {
+      const updated = await withTimeout(
+        directOrdersApi.update(row.order.order_id, {
+          items: buildUpdatedItems(row.order, row.itemIndex, row.itemEdit),
+        }),
+        SAVE_TIMEOUT_MS,
+      )
+      syncUpdatedOrder(row.order.order_id, updated)
+      const updatedItem = updated.items[row.itemIndex]
+      if (updatedItem) {
+        itemEdits[key] = buildItemEdit(updatedItem)
+      }
+      orderEdits[row.order.order_id] = buildOrderEdit(updated)
+    } catch (error: any) {
+      rowFeedback[key] = error.response?.data?.error || error.message || 'Auto-save failed'
+    } finally {
+      activeSavePromises.delete(key)
+      if (queuedAutoSaveKeys.has(key)) {
+        queuedAutoSaveKeys.delete(key)
+        queueAutoSave(key, 0)
+        return
+      }
+      autoSaveRowCache.delete(key)
+    }
+  })()
+
+  activeSavePromises.set(key, request)
+  await request
+}
+
 const saveRow = async (row: VisibleRow) => {
+  const existingRequest = activeSavePromises.get(row.rowKey)
+  if (existingRequest) {
+    try {
+      await existingRequest
+    } catch {
+      // Let the explicit save continue even if a background autosave failed.
+    }
+  }
+
+  clearAutoSaveTimer(row.rowKey)
+  queuedAutoSaveKeys.delete(row.rowKey)
   savingRows[row.rowKey] = true
   rowFeedback[row.rowKey] = ''
 
@@ -498,7 +656,13 @@ const saveRow = async (row: VisibleRow) => {
       items: buildUpdatedItems(row.order, row.itemIndex, row.itemEdit),
     }
 
-    const updated = await store.updateOrder(row.order.order_id, payload)
+    const request = withTimeout(
+      directOrdersApi.update(row.order.order_id, payload),
+      SAVE_TIMEOUT_MS,
+    )
+    activeSavePromises.set(row.rowKey, request.then(() => undefined))
+    const updated = await request
+    syncUpdatedOrder(row.order.order_id, updated)
     const updatedItem = updated.items[row.itemIndex]
     if (updatedItem) {
       itemEdits[row.rowKey] = buildItemEdit(updatedItem)
@@ -508,7 +672,14 @@ const saveRow = async (row: VisibleRow) => {
   } catch (error: any) {
     rowFeedback[row.rowKey] = error.response?.data?.error || error.message || 'Save failed'
   } finally {
+    activeSavePromises.delete(row.rowKey)
     savingRows[row.rowKey] = false
+    if (queuedAutoSaveKeys.has(row.rowKey)) {
+      queuedAutoSaveKeys.delete(row.rowKey)
+      queueAutoSave(row.rowKey, 0)
+      return
+    }
+    autoSaveRowCache.delete(row.rowKey)
   }
 }
 
@@ -524,10 +695,14 @@ const applyBulkStatusUpdate = async () => {
     const uniqueOrderIds = [...new Set(selectedVisibleRows.value.map((row) => row.order.order_id))]
 
     for (const orderId of uniqueOrderIds) {
-      const updated = await store.updateOrder(orderId, {
-        order_status: bulkOrderStatus.value,
-        issues,
-      })
+      const updated = await withTimeout(
+        directOrdersApi.update(orderId, {
+          order_status: bulkOrderStatus.value,
+          issues,
+        }),
+        SAVE_TIMEOUT_MS,
+      )
+      syncUpdatedOrder(orderId, updated)
       orderEdits[orderId] = buildOrderEdit(updated)
     }
 
@@ -549,6 +724,16 @@ watch(
 
 onMounted(async () => {
   await loadOrders()
+})
+
+onBeforeUnmount(() => {
+  for (const timerId of autoSaveTimers.values()) {
+    window.clearTimeout(timerId)
+  }
+  autoSaveTimers.clear()
+  autoSaveRowCache.clear()
+  queuedAutoSaveKeys.clear()
+  activeSavePromises.clear()
 })
 </script>
 
@@ -698,7 +883,7 @@ h1 {
 
 .ops-table {
   width: 100%;
-  min-width: 1920px;
+  min-width: 1730px;
   border-collapse: separate;
   border-spacing: 0;
 }
@@ -711,7 +896,7 @@ h1 {
 
 .ops-table th,
 .ops-table td {
-  padding: 0.8rem 0.65rem;
+  padding: 0.68rem 0.48rem;
   text-align: left;
   vertical-align: top;
   border-bottom: 1px solid rgba(226, 232, 240, 0.9);
@@ -785,10 +970,50 @@ h1 {
   background: rgba(226, 232, 240, 0.92);
 }
 
+.ops-table tbody tr.row-attention > td {
+  box-shadow: inset 0 2px 0 var(--attention-color), inset 0 -2px 0 var(--attention-color);
+}
+
+.ops-table tbody tr.row-attention > td:first-child {
+  box-shadow:
+    inset 4px 0 0 var(--attention-color),
+    inset 0 2px 0 var(--attention-color),
+    inset 0 -2px 0 var(--attention-color);
+}
+
+.ops-table tbody tr.row-attention > td:last-child {
+  box-shadow:
+    inset -4px 0 0 var(--attention-color),
+    inset 0 2px 0 var(--attention-color),
+    inset 0 -2px 0 var(--attention-color);
+}
+
+.ops-table tbody tr.row-attention--qty > td {
+  --attention-color: #166534;
+}
+
+.ops-table tbody tr.row-attention--special > td {
+  --attention-color: #a16207;
+}
+
 .cell-title {
   font-weight: 900;
   color: #0f172a;
   white-space: nowrap;
+}
+
+.cell-title--attention {
+  font-size: 1.12rem;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+
+.cell-title--qty {
+  color: #166534;
+}
+
+.cell-title--special {
+  color: #a16207;
 }
 
 .cell-subtitle {
@@ -799,57 +1024,57 @@ h1 {
 }
 
 .cell-status {
-  min-width: 13rem;
+  min-width: 11.2rem;
 }
 
 .cell-customer {
-  min-width: 10rem;
+  min-width: 8.8rem;
 }
 
 .cell-dimension {
-  min-width: 17rem;
+  min-width: 13.2rem;
 }
 
 .cell-item {
-  min-width: 11rem;
+  min-width: 9.5rem;
   white-space: normal !important;
   line-height: 1.45;
 }
 
 .cell-thickness {
-  min-width: 7.5rem;
+  min-width: 6.2rem;
 }
 
 .ops-table th:nth-child(9),
 .ops-table td:nth-child(9),
 .ops-table th:nth-child(10),
 .ops-table td:nth-child(10) {
-  min-width: 10rem;
+  min-width: 8.8rem;
 }
 
 .ops-table th:nth-child(11),
 .ops-table td:nth-child(11),
 .ops-table th:nth-child(12),
 .ops-table td:nth-child(12) {
-  min-width: 11rem;
+  min-width: 8.2rem;
 }
 
 .ops-table th:nth-child(13),
 .ops-table td:nth-child(13) {
-  min-width: 20rem;
+  min-width: 12rem;
 }
 
 .ops-table th:nth-child(14),
 .ops-table td:nth-child(14) {
-  min-width: 10.5rem;
+  min-width: 9.2rem;
 }
 
 .cell-notes {
-  min-width: 20rem;
+  min-width: 12rem;
 }
 
 .cell-actions {
-  min-width: 10.5rem;
+  min-width: 9.2rem;
   display: grid;
 }
 
