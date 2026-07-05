@@ -57,6 +57,12 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/order-extractor-confirm',
+      name: 'order-extractor-confirm',
+      component: () => import('@/views/OrderExtractorConfirmView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/returns-initiated',
       name: 'returns-initiated',
       component: () => import('@/views/ReturnsView.vue'),

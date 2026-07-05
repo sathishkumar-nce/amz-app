@@ -161,7 +161,7 @@
                   <button
                     v-for="step in incrementSteps"
                     :key="`width-${step}`"
-                    @click="applyInchIncrement(row.productEdit, 'customer_width_in_inches', step)"
+                    @click="applyInchIncrement(row, 'customer_width_in_inches', step)"
                     type="button"
                     class="increment-button"
                   >
@@ -182,7 +182,7 @@
                   <button
                     v-for="step in incrementSteps"
                     :key="`length-${step}`"
-                    @click="applyInchIncrement(row.productEdit, 'customer_length_in_inches', step)"
+                    @click="applyInchIncrement(row, 'customer_length_in_inches', step)"
                     type="button"
                     class="increment-button"
                   >
@@ -198,6 +198,7 @@
                   step="0.01"
                   class="sheet-input sheet-input--mm"
                   placeholder="Width mm"
+                  @input="scheduleMmFieldAutoSave(row)"
                 />
                 <div class="increment-row">
                   <button type="button" class="increment-button increment-button--indicator" disabled>
@@ -212,6 +213,7 @@
                   step="0.01"
                   class="sheet-input sheet-input--mm"
                   placeholder="Length mm"
+                  @input="scheduleMmFieldAutoSave(row)"
                 />
                 <div class="increment-row">
                   <button type="button" class="increment-button increment-button--indicator" disabled>
@@ -270,7 +272,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { ordersApi } from '@/api/orders'
 import ListUtilityBar from '@/components/ListUtilityBar.vue'
 import OrderListFilterBar from '@/components/OrderListFilterBar.vue'
 import OrderSearchBar from '@/components/OrderSearchBar.vue'
@@ -332,6 +335,7 @@ const searchKey = ref('order_id')
 const searchValue = ref('')
 const incrementSteps = [0, 0.1, 0.2, 0.25, 0.5, 0.75, 1]
 const SAVE_TIMEOUT_MS = 15000
+const AUTO_SAVE_DEBOUNCE_MS = 500
 const productEdits = reactive<Record<string, ProductEditRow>>({})
 const orderEdits = reactive<Record<string, OrderEditRow>>({})
 const savingProducts = reactive<Record<string, boolean>>({})
@@ -341,6 +345,10 @@ const bulkOrderStatus = ref('')
 const bulkSaving = ref(false)
 const bulkFeedback = ref('')
 const sheetWrapRef = ref<HTMLElement | null>(null)
+const autoSaveTimers = new Map<string, number>()
+const autoSaveRowCache = new Map<string, VisibleRow>()
+const queuedAutoSaveKeys = new Set<string>()
+const activeSavePromises = new Map<string, Promise<void>>()
 
 const sheetRows = computed<SheetRow[]>(() =>
   ordersStore.orders.flatMap((order) =>
@@ -415,15 +423,44 @@ const roundForInput = (value: number) => {
   return rounded.toFixed(2)
 }
 
+const clearAutoSaveTimer = (rowKey: string) => {
+  const timerId = autoSaveTimers.get(rowKey)
+  if (timerId == null) return
+  window.clearTimeout(timerId)
+  autoSaveTimers.delete(rowKey)
+}
+
+const queueAutoSave = (rowKey: string, delay = AUTO_SAVE_DEBOUNCE_MS) => {
+  clearAutoSaveTimer(rowKey)
+  autoSaveTimers.set(
+    rowKey,
+    window.setTimeout(() => {
+      autoSaveTimers.delete(rowKey)
+      if (activeSavePromises.has(rowKey)) {
+        queuedAutoSaveKeys.add(rowKey)
+        return
+      }
+      void autoSaveProductRowByKey(rowKey)
+    }, delay),
+  )
+}
+
+const scheduleMmFieldAutoSave = (row: VisibleRow) => {
+  autoSaveRowCache.set(row.rowKey, row)
+  queueAutoSave(row.rowKey)
+}
+
 const applyInchIncrement = (
-  edit: ProductEditRow,
+  row: VisibleRow,
   field: 'customer_width_in_inches' | 'customer_length_in_inches',
   delta: number,
 ) => {
+  const edit = row.productEdit
   const mmField = field === 'customer_width_in_inches' ? 'customer_width_in_mm' : 'customer_length_in_mm'
   const currentInches = Number(edit[field] || 0)
   const nextInches = currentInches + delta
   edit[mmField] = roundForInput(nextInches * 25.4)
+  scheduleMmFieldAutoSave(row)
 }
 
 const formatInchDifference = (
@@ -479,6 +516,14 @@ const visibleRows = computed<VisibleRow[]>(() => {
         return ''
     }
   }, sortState.value.direction)
+})
+
+const rowLookup = computed(() => {
+  const lookup = new Map<string, SheetRow>()
+  for (const row of sheetRows.value) {
+    lookup.set(row.rowKey, row)
+  }
+  return lookup
 })
 
 const selectedVisibleRows = computed(() => visibleRows.value.filter((row) => Boolean(selectedRows[row.rowKey])))
@@ -596,46 +641,114 @@ const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number) => {
   }
 }
 
-const saveProductRow = async (row: VisibleRow) => {
-  const key = row.rowKey
-  const edit = row.productEdit
-  if (!edit) return
+const buildProductPayload = (edit: ProductEditRow): UpdateProductManualFieldsRequest => ({
+  customer_width_in_inches: toOptionalNumber(edit.customer_width_in_inches),
+  customer_length_in_inches: toOptionalNumber(edit.customer_length_in_inches),
+  customer_width_in_mm: toOptionalNumber(edit.customer_width_in_mm),
+  customer_length_in_mm: toOptionalNumber(edit.customer_length_in_mm),
+  corner_radius_and_notes: edit.corner_radius_and_notes || undefined,
+})
 
-  savingProducts[key] = true
-  productFeedback[key] = ''
+const resolveRowForSave = (rowKey: string) => rowLookup.value.get(rowKey) ?? autoSaveRowCache.get(rowKey)
 
-  try {
-    const payload: UpdateProductManualFieldsRequest = {
-      customer_width_in_inches: toOptionalNumber(edit.customer_width_in_inches),
-      customer_length_in_inches: toOptionalNumber(edit.customer_length_in_inches),
-      customer_width_in_mm: toOptionalNumber(edit.customer_width_in_mm),
-      customer_length_in_mm: toOptionalNumber(edit.customer_length_in_mm),
-      corner_radius_and_notes: edit.corner_radius_and_notes || undefined,
-    }
-    const orderPayload: UpdateManualFieldsRequest = {
-      order_status: row.orderEdit.order_status || 'received',
-    }
-
-    await withTimeout(
-      ordersStore.updateOrderManualFields(row.order.amazon_order_id, orderPayload),
-      SAVE_TIMEOUT_MS,
-    )
-
-    const updated = await withTimeout(
-      ordersStore.updateProductManualFields(row.order.amazon_order_id, row.product.order_product_id, payload),
-      SAVE_TIMEOUT_MS,
-    )
-    const updatedProduct = updated?.products?.find((product) => product.order_product_id === row.product.order_product_id)
-    if (updatedProduct) {
-      productEdits[key] = buildProductEdit(updatedProduct)
-    }
-    orderEdits[row.order.amazon_order_id] = buildOrderEdit(updated)
-    productFeedback[key] = 'Saved'
-  } catch (error: any) {
-    productFeedback[key] = error.response?.data?.error || error.message || 'Save failed'
-  } finally {
-    savingProducts[key] = false
+const autoSaveProductRowByKey = async (rowKey: string) => {
+  if (activeSavePromises.has(rowKey)) {
+    queuedAutoSaveKeys.add(rowKey)
+    return
   }
+
+  const baseRow = resolveRowForSave(rowKey)
+  if (!baseRow) return
+
+  const key = baseRow.rowKey
+  const edit = ensureProductEdit(baseRow.order.amazon_order_id, baseRow.product.order_product_id, baseRow.product)
+
+  clearAutoSaveTimer(key)
+  queuedAutoSaveKeys.delete(key)
+
+  const request = (async () => {
+    try {
+      await withTimeout(
+        ordersApi.updateProductManualFields(baseRow.order.amazon_order_id, baseRow.product.order_product_id, buildProductPayload(edit)),
+        SAVE_TIMEOUT_MS,
+      )
+    } catch (error: any) {
+      productFeedback[key] = error.response?.data?.error || error.message || 'Auto-save failed'
+    } finally {
+      activeSavePromises.delete(key)
+      if (queuedAutoSaveKeys.has(key)) {
+        queuedAutoSaveKeys.delete(key)
+        queueAutoSave(key, 0)
+        return
+      }
+      autoSaveRowCache.delete(key)
+    }
+  })()
+
+  activeSavePromises.set(key, request)
+  await request
+}
+
+const saveProductRowByKey = async (rowKey: string) => {
+  const existingRequest = activeSavePromises.get(rowKey)
+  if (existingRequest) {
+    await existingRequest
+  }
+
+  const cachedRow = autoSaveRowCache.get(rowKey)
+  const baseRow = rowLookup.value.get(rowKey) ?? cachedRow
+  if (!baseRow) return
+
+  const key = baseRow.rowKey
+  const edit = ensureProductEdit(baseRow.order.amazon_order_id, baseRow.product.order_product_id, baseRow.product)
+  const orderEdit = ensureOrderEdit(baseRow.order)
+
+  clearAutoSaveTimer(key)
+  queuedAutoSaveKeys.delete(key)
+  const request = (async () => {
+    savingProducts[key] = true
+    productFeedback[key] = ''
+
+    try {
+      const orderPayload: UpdateManualFieldsRequest = {
+        order_status: orderEdit.order_status || 'received',
+      }
+
+      await withTimeout(
+        ordersStore.updateOrderManualFields(baseRow.order.amazon_order_id, orderPayload),
+        SAVE_TIMEOUT_MS,
+      )
+
+      const updated = await withTimeout(
+        ordersStore.updateProductManualFields(baseRow.order.amazon_order_id, baseRow.product.order_product_id, buildProductPayload(edit)),
+        SAVE_TIMEOUT_MS,
+      )
+      const updatedProduct = updated?.products?.find((product) => product.order_product_id === baseRow.product.order_product_id)
+      if (updatedProduct) {
+        productEdits[key] = buildProductEdit(updatedProduct)
+      }
+      orderEdits[baseRow.order.amazon_order_id] = buildOrderEdit(updated)
+      productFeedback[key] = 'Saved'
+    } catch (error: any) {
+      productFeedback[key] = error.response?.data?.error || error.message || 'Save failed'
+    } finally {
+      savingProducts[key] = false
+      activeSavePromises.delete(key)
+      if (queuedAutoSaveKeys.has(key)) {
+        queuedAutoSaveKeys.delete(key)
+        queueAutoSave(key, 0)
+        return
+      }
+      autoSaveRowCache.delete(key)
+    }
+  })()
+
+  activeSavePromises.set(key, request)
+  await request
+}
+
+const saveProductRow = async (row: VisibleRow) => {
+  await saveProductRowByKey(row.rowKey)
 }
 
 const applyBulkStatusUpdate = async () => {
@@ -677,6 +790,16 @@ watch(
 onMounted(() => {
   void rowHighlightRulesStore.ensureLoaded()
   void applyFilters()
+})
+
+onBeforeUnmount(() => {
+  for (const timerId of autoSaveTimers.values()) {
+    window.clearTimeout(timerId)
+  }
+  autoSaveTimers.clear()
+  autoSaveRowCache.clear()
+  queuedAutoSaveKeys.clear()
+  activeSavePromises.clear()
 })
 </script>
 

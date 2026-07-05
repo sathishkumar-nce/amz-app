@@ -114,6 +114,7 @@ const navSections = computed(() => {
         { to: '/safety-claims-analytics', label: 'Safety Claims Analytics' },
         { to: '/orders', label: 'Orders' },
         { to: '/order-confirmation', label: 'Confirm' },
+        { to: '/order-extractor-confirm', label: 'Extract Confirm' },
         { to: '/returns-initiated', label: 'Returns Initiated' },
         { to: '/other-issues', label: 'Other Issues' },
         { to: '/safety-claims', label: 'Safety Claims' },
