@@ -1541,16 +1541,23 @@ const saveProductRowByKey = async (rowKey: string) => {
       }
 
       const updatedOrder = await withTimeout(
-        ordersStore.updateOrderManualFields(baseRow.order.amazon_order_id, orderPayload),
+        ordersApi.updateManualFields(baseRow.order.amazon_order_id, orderPayload),
         SAVE_TIMEOUT_MS,
       )
-      syncLookupResultOrder(baseRow.order.amazon_order_id, updatedOrder)
 
       const updated = await withTimeout(
-        ordersStore.updateProductManualFields(baseRow.order.amazon_order_id, baseRow.product.order_product_id, buildProductPayload(edit)),
+        ordersApi.updateProductManualFields(baseRow.order.amazon_order_id, baseRow.product.order_product_id, buildProductPayload(edit)),
         SAVE_TIMEOUT_MS,
       )
-      const stabilizedUpdated = mergeSavedProductIntoOrder(updated, baseRow.product.order_product_id, edit)
+      const stabilizedUpdated = mergeSavedProductIntoOrder(
+        {
+          ...updated,
+          order_status: updated.order_status || updatedOrder.order_status,
+          order_status_updated_at: updated.order_status_updated_at || updatedOrder.order_status_updated_at,
+        },
+        baseRow.product.order_product_id,
+        edit,
+      )
       syncLookupResultOrder(baseRow.order.amazon_order_id, stabilizedUpdated)
 
       const updatedProduct = stabilizedUpdated.products?.find((product) => product.order_product_id === baseRow.product.order_product_id)
