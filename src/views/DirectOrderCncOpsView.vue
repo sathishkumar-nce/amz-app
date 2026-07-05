@@ -1049,7 +1049,7 @@ h1 {
 .ops-table td:nth-child(9),
 .ops-table th:nth-child(10),
 .ops-table td:nth-child(10) {
-  min-width: 8.8rem;
+  min-width: 5.6rem;
 }
 
 .ops-table th:nth-child(11),
