@@ -348,26 +348,20 @@
                   </th>
                   <th>PDF</th>
                   <th>Page</th>
-                  <th>Order ID</th>
-                  <th>Confirmed Date</th>
-                  <th>Updated At</th>
                   <th>Products</th>
+                  <th>Order ID</th>
                   <th>Quantity</th>
                   <th>Thickness</th>
                   <th>Round Product</th>
                   <th>SKU</th>
                   <th>Default Width (in)</th>
                   <th>Default Length (in)</th>
-                  <th>Default Width (mm)</th>
-                  <th>Default Length (mm)</th>
                   <th>Customer Width (in)</th>
                   <th>Customer Length (in)</th>
                   <th>Customer Width (mm)</th>
                   <th>Customer Length (mm)</th>
                   <th>Corner Radius and Notes</th>
                   <th>Order Status</th>
-                  <th>Customer</th>
-                  <th>City</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -391,14 +385,12 @@
                   </td>
                   <td class="cell-pdf">{{ row.source.fileName }}</td>
                   <td class="cell-page">{{ row.source.pageNumber }}</td>
+                  <td class="cell-product">
+                    <div class="product-title" :title="row.product.name || 'Unnamed product'">{{ row.product.name || 'Unnamed product' }}</div>
+                  </td>
                   <td class="cell-order">
                     <div class="order-id-line">{{ row.order.amazon_order_id }}</div>
                     <div class="order-subline">BL #{{ row.order.baselinker_order_id }}</div>
-                  </td>
-                  <td class="cell-date">{{ formatDate(row.order.date_confirmed || row.order.date_add) }}</td>
-                  <td class="cell-date">{{ formatDateTime(row.product.updated_at || row.order.updated_at) }}</td>
-                  <td class="cell-product">
-                    <div class="product-title" :title="row.product.name || 'Unnamed product'">{{ row.product.name || 'Unnamed product' }}</div>
                   </td>
                   <td class="cell-quantity">{{ formatNumber(row.product.quantity) }}</td>
                   <td class="cell-thickness">{{ row.product.thickness || 'Not set' }}</td>
@@ -406,8 +398,6 @@
                   <td class="cell-sku">{{ row.product.sku || 'Not set' }}</td>
                   <td class="cell-metric">{{ formatNumber(row.product.default_width_in_inches) }}</td>
                   <td class="cell-metric">{{ formatNumber(row.product.default_length_in_inches) }}</td>
-                  <td class="cell-metric">{{ formatNumber(row.product.default_width_in_mm) }}</td>
-                  <td class="cell-metric">{{ formatNumber(row.product.default_length_in_mm) }}</td>
 
                   <td class="cell-input-group">
                     <input
@@ -495,8 +485,6 @@
                       <option value="returned">returned</option>
                     </select>
                   </td>
-                  <td class="cell-customer">{{ formatText(row.order.delivery_fullname || row.order.user_login) }}</td>
-                  <td class="cell-city">{{ formatText(row.order.delivery_city) }}</td>
                   <td class="cell-actions">
                     <button
                       type="button"
@@ -2434,7 +2422,7 @@ h1 {
 
 .cnc-sheet {
   width: 100%;
-  min-width: 2120px;
+  min-width: 1760px;
   border-collapse: separate;
   border-spacing: 0;
 }
