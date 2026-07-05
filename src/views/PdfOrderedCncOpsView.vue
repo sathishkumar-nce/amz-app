@@ -373,6 +373,10 @@
                   :class="{
                     'row-has-custom-inputs': rowWasInitiallyCustom(row.rowKey),
                     'row-updated': isRowUpdated(row.rowKey),
+                    'row-attention': rowNeedsAttention(row),
+                    'row-attention--qty': getRowAttentionTone(row) === 'qty',
+                    'row-attention--round': getRowAttentionTone(row) === 'round',
+                    'row-attention--special': getRowAttentionTone(row) === 'special',
                   }"
                   :style="getRowStyle(row)"
                 >
@@ -389,7 +393,19 @@
                     <div class="product-title" :title="row.product.name || 'Unnamed product'">{{ row.product.name || 'Unnamed product' }}</div>
                   </td>
                   <td class="cell-order">
-                    <div class="order-id-line">{{ row.order.amazon_order_id }}</div>
+                    <div
+                      :class="[
+                        'order-id-line',
+                        {
+                          'order-id-line--attention': rowNeedsAttention(row),
+                          'order-id-line--qty': getRowAttentionTone(row) === 'qty',
+                          'order-id-line--round': getRowAttentionTone(row) === 'round',
+                          'order-id-line--special': getRowAttentionTone(row) === 'special',
+                        },
+                      ]"
+                    >
+                      {{ row.order.amazon_order_id }}
+                    </div>
                     <div class="order-subline">BL #{{ row.order.baselinker_order_id }}</div>
                   </td>
                   <td class="cell-quantity">{{ formatNumber(row.product.quantity) }}</td>
@@ -1741,6 +1757,29 @@ function productHasCustomerInputs(product: OrderProduct) {
   )
 }
 
+function rowHasMultiQuantity(row: VisibleRow) {
+  return Number(row.product.quantity ?? 0) > 1
+}
+
+function rowHasRoundProduct(row: VisibleRow) {
+  return Boolean(row.product.is_round)
+}
+
+function rowHasSpecialNotes(row: VisibleRow) {
+  return /\[special\]/i.test(row.productEdit.corner_radius_and_notes || row.product.corner_radius_and_notes || '')
+}
+
+function getRowAttentionTone(row: VisibleRow): 'qty' | 'round' | 'special' | null {
+  if (rowHasRoundProduct(row)) return 'round'
+  if (rowHasSpecialNotes(row)) return 'special'
+  if (rowHasMultiQuantity(row)) return 'qty'
+  return null
+}
+
+function rowNeedsAttention(row: VisibleRow) {
+  return getRowAttentionTone(row) !== null
+}
+
 function rowWasInitiallyCustom(rowKey: string) {
   return Boolean(initialCustomInputRows[rowKey])
 }
@@ -2621,6 +2660,36 @@ h1 {
   font-size: 0.94rem;
 }
 
+.row-attention > td {
+  box-shadow: inset 0 2px 0 var(--attention-color), inset 0 -2px 0 var(--attention-color);
+}
+
+.row-attention > td:first-child {
+  box-shadow:
+    inset 4px 0 0 var(--attention-color),
+    inset 0 2px 0 var(--attention-color),
+    inset 0 -2px 0 var(--attention-color);
+}
+
+.row-attention > td:last-child {
+  box-shadow:
+    inset -4px 0 0 var(--attention-color),
+    inset 0 2px 0 var(--attention-color),
+    inset 0 -2px 0 var(--attention-color);
+}
+
+.row-attention--qty > td {
+  --attention-color: #166534;
+}
+
+.row-attention--round > td {
+  --attention-color: #991b1b;
+}
+
+.row-attention--special > td {
+  --attention-color: #a16207;
+}
+
 .cell-check {
   width: 2.8rem;
   min-width: 2.8rem;
@@ -2809,6 +2878,24 @@ h1 {
 .order-id-line {
   font-size: 0.96rem;
   line-height: 1.2;
+}
+
+.order-id-line--attention {
+  font-size: 1.15rem;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+
+.order-id-line--qty {
+  color: #166534;
+}
+
+.order-id-line--round {
+  color: #991b1b;
+}
+
+.order-id-line--special {
+  color: #a16207;
 }
 
 .order-subline {
