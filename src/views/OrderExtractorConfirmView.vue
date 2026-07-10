@@ -176,6 +176,22 @@
                   >
                     {{ savingRows[row.rowKey] ? 'Saving...' : 'Save Row' }}
                   </button>
+                  <button
+                    type="button"
+                    class="whatsapp-button"
+                    :disabled="!canOpenWhatsApp(row.order.phone)"
+                    @click.stop.prevent="openWhatsAppTemplate(row.order, 'additional')"
+                  >
+                    Ask Additional
+                  </button>
+                  <button
+                    type="button"
+                    class="whatsapp-button whatsapp-button--alt"
+                    :disabled="!canOpenWhatsApp(row.order.phone)"
+                    @click.stop.prevent="openWhatsAppTemplate(row.order, 'initial')"
+                  >
+                    Ask Initial
+                  </button>
                   <router-link :to="`/orders/${row.order.amazon_order_id}`" class="view-link">View</router-link>
                   <p v-if="rowFeedback[row.rowKey]" class="product-feedback">{{ rowFeedback[row.rowKey] }}</p>
                 </td>
@@ -233,6 +249,7 @@ type ConfirmationRowEdit = {
 }
 
 type SortKey = 'confirmed_date' | 'order_status' | 'quantity' | 'thickness' | 'sku' | 'priority'
+type WhatsAppTemplateKind = 'additional' | 'initial'
 
 const ORDER_ID_PATTERN = /\b\d{3}-\d{7}-\d{7}\b/g
 const SAVE_TIMEOUT_MS = 15000
@@ -345,6 +362,43 @@ const formatProductName = (value?: string | null) => {
   const trimmed = value?.trim()
   if (!trimmed) return 'Unnamed product'
   return trimmed.length > 110 ? `${trimmed.slice(0, 110)}...` : trimmed
+}
+const normalizeIndianPhone = (value?: string | null) => {
+  const digits = String(value || '').replace(/\D/g, '')
+  if (digits.length < 10) return null
+  return digits.slice(-10)
+}
+const canOpenWhatsApp = (value?: string | null) => normalizeIndianPhone(value) !== null
+const buildWhatsAppMessage = (orderId: string, kind: WhatsAppTemplateKind) => {
+  if (kind === 'additional') {
+    return `Hi! 👋
+
+Thank you for taking the time to speak with us.
+
+If you have any additional requirements or customization details beyond what we discussed during our phone conversation for your amazon order id ${orderId}, please feel free to reply to this message. You may also share a photo if it helps illustrate your requirements.
+
+If there are no further details, we'll proceed with your order based on our discussion.
+
+Thank you for choosing *MR.CLEAR*.`
+  }
+
+  return `Hi! 👋
+
+Thank you for choosing *MR.CLEAR*.
+
+If you have any additional customization requirements for your table cover order on amazon ${orderId}, please reply to this message or share a photo of your table. If there are no additional requirements, we'll proceed with your order as discussed.
+
+Thank you! 😊`
+}
+const openWhatsAppTemplate = (order: Order, kind: WhatsAppTemplateKind) => {
+  const normalizedPhone = normalizeIndianPhone(order.phone)
+  if (!normalizedPhone) {
+    return
+  }
+
+  const message = buildWhatsAppMessage(order.amazon_order_id, kind)
+  const url = `https://web.whatsapp.com/send?phone=91${normalizedPhone}&text=${encodeURIComponent(message)}`
+  window.open(url, '_blank', 'noopener,noreferrer')
 }
 
 const buildRowEdit = (row: SheetRow): ConfirmationRowEdit => ({
@@ -877,7 +931,8 @@ h2 {
 
 .action-button,
 .save-button,
-.toggle-button {
+.toggle-button,
+.whatsapp-button {
   border: 0;
   cursor: pointer;
   font: inherit;
@@ -1021,9 +1076,28 @@ h2 {
 
 .save-button:disabled,
 .action-button:disabled,
-.toggle-button:disabled {
+.toggle-button:disabled,
+.whatsapp-button:disabled {
   opacity: 0.7;
-  cursor: wait;
+  cursor: not-allowed;
+}
+
+.whatsapp-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.4rem;
+  width: 100%;
+  border-radius: 12px;
+  background: #dcfce7;
+  color: #166534;
+  font-weight: 800;
+  margin-bottom: 0.55rem;
+}
+
+.whatsapp-button--alt {
+  background: #dbeafe;
+  color: #1d4ed8;
 }
 
 .view-link {
