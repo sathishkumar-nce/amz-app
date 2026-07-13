@@ -132,6 +132,8 @@ export interface Order {
   order_status: string
   order_status_updated_at?: string | null
   is_round?: boolean
+  review_confidence: number
+  review_confidence_updated_at?: string | null
   updated_by?: string | null
   safety_claim_updated_at?: string | null
   created_at: string
@@ -493,6 +495,63 @@ export interface ShippingDateFilterStateResponse {
   active_filter_key: string
 }
 
+export interface ReviewFollowupStateSetting {
+  state_code: string
+  state_name: string
+  followup_days: number
+}
+
+export interface ReviewFollowupSettingsResponse {
+  settings: ReviewFollowupStateSetting[]
+}
+
+export interface ReviewQueueItem {
+  amazon_order_id: string
+  customer_name: string
+  phone: string
+  state_code: string
+  state_name: string
+  ordered_at: string
+  product_name: string
+  quantity_summary: string
+  thickness_summary: string
+  has_round: boolean
+  has_special: boolean
+  review_confidence: number
+  review_request_status: ReviewRequestStatus
+  followup_days: number
+}
+
+export interface ReviewQueueResponse {
+  data: ReviewQueueItem[]
+  total: number
+}
+
+export interface ReviewQueueFilters {
+  state?: string
+  status?: string
+  quantity_operator?: 'gt' | 'gte' | 'lt' | 'lte' | 'eq'
+  quantity?: number | string
+  confidence_operator?: 'gt' | 'gte' | 'lt' | 'lte' | 'eq'
+  confidence?: number | string
+  is_round?: boolean | string
+  special?: boolean | string
+  thickness?: string
+  search_key?: 'all' | 'order_id' | 'phone' | 'customer'
+  search_value?: string
+}
+
+export type ReviewRequestStatus = 'not-requested' | 'requested' | 'received-review'
+
+export interface UpdateReviewRequestStatusRequest {
+  amazon_order_ids: string[]
+  status: ReviewRequestStatus
+}
+
+export interface UpdateReviewRequestStatusResponse {
+  updated_count: number
+}
+
 export interface InteraktSettings {
   enabled: boolean
   mode: 'test' | 'prod'
@@ -632,6 +691,7 @@ export interface UpdateManualFieldsRequest {
   safety_claim?: string
   safety_claim_notes?: string
   is_round?: boolean
+  review_confidence?: number
 }
 
 export interface UpdateProductManualFieldsRequest {

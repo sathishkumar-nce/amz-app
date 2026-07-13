@@ -104,6 +104,9 @@
                 <th>
                   <SortableHeader label="Priority" :direction="sortState.key === 'priority' ? sortState.direction : null" @sort="setSort('priority', $event)" />
                 </th>
+                <th>
+                  <SortableHeader label="Review %" :direction="sortState.key === 'review_confidence' ? sortState.direction : null" @sort="setSort('review_confidence', $event)" />
+                </th>
                 <th>is_round</th>
                 <th>Width (in)</th>
                 <th>Length (in)</th>
@@ -139,6 +142,24 @@
                     <option value="p3">P3</option>
                     <option value="p4">P4</option>
                   </select>
+                </td>
+                <td class="cell-confidence">
+                  <input
+                    v-model.number="row.edit.review_confidence"
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="5"
+                    class="confidence-slider"
+                  />
+                  <input
+                    v-model.number="row.edit.review_confidence"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="5"
+                    class="sheet-input confidence-number"
+                  />
                 </td>
                 <td><span class="status-pill">{{ row.product.is_round ? 'Yes' : 'No' }}</span></td>
                 <td>
@@ -243,12 +264,13 @@ type VisibleRow = SheetRow & {
 
 type ConfirmationRowEdit = {
   priority: string
+  review_confidence: number
   customer_width_in_inches: string
   customer_length_in_inches: string
   corner_radius_and_notes: string
 }
 
-type SortKey = 'confirmed_date' | 'order_status' | 'quantity' | 'thickness' | 'sku' | 'priority'
+type SortKey = 'confirmed_date' | 'order_status' | 'quantity' | 'thickness' | 'sku' | 'priority' | 'review_confidence'
 type WhatsAppTemplateKind = 'additional' | 'initial'
 
 const ORDER_ID_PATTERN = /\b\d{3}-\d{7}-\d{7}\b/g
@@ -336,6 +358,8 @@ const filteredRows = computed<VisibleRow[]>(() => {
         return row.product.sku || ''
       case 'priority':
         return row.edit.priority || ''
+      case 'review_confidence':
+        return row.edit.review_confidence
       default:
         return ''
     }
@@ -403,10 +427,17 @@ const openWhatsAppTemplate = (order: Order, kind: WhatsAppTemplateKind) => {
 
 const buildRowEdit = (row: SheetRow): ConfirmationRowEdit => ({
   priority: row.order.priority || 'p3',
+  review_confidence: clampReviewConfidence(row.order.review_confidence),
   customer_width_in_inches: numberToString(row.product.customer_width_in_inches),
   customer_length_in_inches: numberToString(row.product.customer_length_in_inches),
   corner_radius_and_notes: row.product.corner_radius_and_notes ?? '',
 })
+
+const clampReviewConfidence = (value?: number | null) => {
+  const parsed = Number(value ?? 0)
+  if (!Number.isFinite(parsed)) return 0
+  return Math.min(100, Math.max(0, Math.round(parsed)))
+}
 
 const ensureRowEdit = (row: SheetRow) => {
   if (!rowEdits[row.rowKey]) {
@@ -589,6 +620,7 @@ const saveRow = async (row: SheetRow) => {
   try {
     const orderPayload: UpdateManualFieldsRequest = {
       priority: edit.priority,
+      review_confidence: clampReviewConfidence(edit.review_confidence),
     }
 
     const productPayload: UpdateProductManualFieldsRequest = {
@@ -976,7 +1008,7 @@ h2 {
 
 .confirm-sheet {
   width: 100%;
-  min-width: 1820px;
+  min-width: 1960px;
   border-collapse: separate;
   border-spacing: 0;
   table-layout: auto;
@@ -1003,15 +1035,15 @@ h2 {
   background: var(--row-highlight-background, transparent);
 }
 
-.confirm-sheet th:nth-child(13),
-.confirm-sheet td:nth-child(13),
 .confirm-sheet th:nth-child(14),
-.confirm-sheet td:nth-child(14) {
+.confirm-sheet td:nth-child(14),
+.confirm-sheet th:nth-child(15),
+.confirm-sheet td:nth-child(15) {
   min-width: 112px;
 }
 
-.confirm-sheet th:nth-child(15),
-.confirm-sheet td:nth-child(15) {
+.confirm-sheet th:nth-child(16),
+.confirm-sheet td:nth-child(16) {
   min-width: 190px;
 }
 
@@ -1050,16 +1082,30 @@ h2 {
   min-width: 190px;
 }
 
+.cell-confidence {
+  min-width: 176px;
+}
+
+.confidence-slider {
+  width: 100%;
+  accent-color: #0f766e;
+}
+
+.confidence-number {
+  margin-top: 0.45rem;
+  max-width: 5.2rem;
+}
+
 .confirm-sheet td .sheet-input {
   min-width: 100%;
 }
 
-.confirm-sheet td:nth-child(13) .sheet-input,
-.confirm-sheet td:nth-child(14) .sheet-input {
+.confirm-sheet td:nth-child(14) .sheet-input,
+.confirm-sheet td:nth-child(15) .sheet-input {
   min-width: 92px;
 }
 
-.confirm-sheet td:nth-child(15) .sheet-textarea {
+.confirm-sheet td:nth-child(16) .sheet-textarea {
   min-width: 170px;
   min-height: 7.5rem;
 }

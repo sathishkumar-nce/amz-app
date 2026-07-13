@@ -87,6 +87,18 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/review-requests',
+      name: 'review-requests',
+      component: () => import('@/views/ReviewRequestsView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/review-followup-settings',
+      name: 'review-followup-settings',
+      component: () => import('@/views/ReviewFollowupSettingsView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/safety-claims-analytics',
       name: 'safety-claims-analytics',
       component: () => import('@/views/SafetyClaimsAnalyticsView.vue'),

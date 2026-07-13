@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { ChangedOrdersByIDsResponse, DashboardAnalytics, ExecutiveDashboardResponse, Order, OrderFilters, OrderListResponse, OrdersByIDsResponse, RepeatCustomerResponse, ReturnsDashboardResponse, SafetyClaimsDashboardResponse, UpdateManualFieldsRequest, UpdateProductManualFieldsRequest, Issue, Return, SafetyClaimOrder } from '@/types'
+import type { ChangedOrdersByIDsResponse, DashboardAnalytics, ExecutiveDashboardResponse, Order, OrderFilters, OrderListResponse, OrdersByIDsResponse, RepeatCustomerResponse, ReviewFollowupSettingsResponse, ReviewFollowupStateSetting, ReviewQueueFilters, ReviewQueueResponse, ReviewRequestStatus, ReturnsDashboardResponse, SafetyClaimsDashboardResponse, UpdateManualFieldsRequest, UpdateProductManualFieldsRequest, UpdateReviewRequestStatusResponse, Issue, Return, SafetyClaimOrder } from '@/types'
 import { normalizeOrder, normalizeOrderListResponse } from '@/utils/orderData'
 
 export const ordersApi = {
@@ -182,6 +182,34 @@ export const ordersApi = {
         order_status: filters.orderStatus,
         safety_claimed: filters.safetyClaimed,
       },
+    })
+    return response.data
+  },
+
+  listReviewFollowupSettings: async (): Promise<ReviewFollowupSettingsResponse> => {
+    const response = await apiClient.get<ReviewFollowupSettingsResponse>('/api/v1/review-followups/settings')
+    return response.data
+  },
+
+  updateReviewFollowupSettings: async (settings: ReviewFollowupStateSetting[]): Promise<ReviewFollowupSettingsResponse> => {
+    const response = await apiClient.put<ReviewFollowupSettingsResponse>('/api/v1/review-followups/settings', { settings })
+    return response.data
+  },
+
+  resetReviewFollowupSettings: async (): Promise<ReviewFollowupSettingsResponse> => {
+    const response = await apiClient.post<ReviewFollowupSettingsResponse>('/api/v1/review-followups/settings/reset')
+    return response.data
+  },
+
+  listReviewQueue: async (filters: ReviewQueueFilters = {}): Promise<ReviewQueueResponse> => {
+    const response = await apiClient.get<ReviewQueueResponse>('/api/v1/review-followups/queue', { params: filters })
+    return response.data
+  },
+
+  updateReviewRequestStatus: async (amazonOrderIds: string[], status: ReviewRequestStatus): Promise<UpdateReviewRequestStatusResponse> => {
+    const response = await apiClient.patch<UpdateReviewRequestStatusResponse>('/api/v1/review-followups/status', {
+      amazon_order_ids: amazonOrderIds,
+      status,
     })
     return response.data
   }
