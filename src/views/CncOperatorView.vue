@@ -138,7 +138,7 @@
               <td>{{ formatDateTime(row.product.updated_at || row.order.updated_at) }}</td>
               <td><span class="status-pill">{{ row.order.order_status }}</span></td>
               <td class="cell-product">
-                <div class="product-title">{{ row.product.name || 'Unnamed product' }}</div>
+                <div class="product-title">{{ formatProductName(row.product.name) }}</div>
               </td>
               <td class="cell-quantity">{{ formatNumber(row.product.quantity) }}</td>
               <td>{{ row.product.thickness || 'Not set' }}</td>
@@ -284,7 +284,7 @@ import { useAmazonRowHighlightRulesStore } from '@/stores/amazonRowHighlightRule
 import { useOrdersStore } from '@/stores/orders'
 import type { Order, OrderProduct, UpdateManualFieldsRequest, UpdateProductManualFieldsRequest } from '@/types'
 import { buildOrderListAdvancedRequest, createOrderListAdvancedFilters } from '@/utils/orderListFilters'
-import { formatStandardDate } from '@/utils/orderData'
+import { formatProductNameForDisplay, formatStandardDate } from '@/utils/orderData'
 import { sortItems, type SortDirection } from '@/utils/tableSort'
 
 type ProductEditRow = {
@@ -365,6 +365,7 @@ const sheetRows = computed<SheetRow[]>(() =>
 const productKey = (amazonOrderId: string, orderProductId: number) => `${amazonOrderId}:${orderProductId}`
 const formatDate = (dateString?: string | null) => formatStandardDate(dateString)
 const formatDateTime = (dateString?: string | null) => formatStandardDate(dateString)
+const formatProductName = formatProductNameForDisplay
 const formatText = (value?: string | null) => value?.trim() || 'Not available'
 const formatNumber = (value?: number | null) => (value == null ? 'Not set' : String(value))
 const numberToString = (value?: number | null) => (value == null ? '' : String(value))

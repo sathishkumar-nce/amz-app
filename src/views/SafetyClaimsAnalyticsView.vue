@@ -474,12 +474,12 @@
           </thead>
           <tbody>
             <tr v-for="row in sortedTopProducts" :key="row.product">
-              <td>{{ row.product }}</td>
+              <td><span class="product-value">{{ formatProductName(row.product) }}</span></td>
               <td>{{ row.orders }}</td>
               <td>{{ row.claims }}</td>
               <td>{{ formatPercent(row.claim_rate) }}</td>
               <td>
-                <button type="button" class="inline-link" @click="activateDrilldown('product', row.product, `Product: ${row.product}`)">
+                <button type="button" class="inline-link" @click="activateDrilldown('product', row.product, `Product: ${formatProductName(row.product)}`)">
                   View matching orders
                 </button>
               </td>
@@ -534,7 +534,7 @@
               <td>{{ row.state }}</td>
               <td>{{ row.city }}</td>
               <td>{{ row.thickness }}</td>
-              <td>{{ row.product }}</td>
+              <td><span class="product-value">{{ formatProductName(row.product) }}</span></td>
               <td><span class="status-pill">{{ row.order_status }}</span></td>
               <td>{{ row.safety_claim_issues }}</td>
               <td>{{ formatDateTime(row.updated_at) }}</td>
@@ -591,7 +591,7 @@
               <td>{{ row.state }}</td>
               <td>{{ row.city }}</td>
               <td>{{ row.thickness }}</td>
-              <td>{{ row.product }}</td>
+              <td><span class="product-value">{{ formatProductName(row.product) }}</span></td>
               <td><span class="status-pill">{{ row.order_status }}</span></td>
               <td><span :class="booleanPillClass(row.safety_claimed)">{{ row.safety_claimed ? 'Yes' : 'No' }}</span></td>
               <td>{{ row.safety_claim_issues }}</td>
@@ -629,6 +629,7 @@ import type {
   SafetyClaimsDashboardResponse,
 } from '@/types'
 import { exportRowsAsCsv, exportRowsAsExcel, exportRowsAsPdf, type ExportRow } from '@/utils/exportData'
+import { formatProductNameForDisplay } from '@/utils/orderData'
 
 type KpiTone = 'teal' | 'amber' | 'rose' | 'sky' | 'slate'
 type TrendGranularity = 'daily' | 'weekly' | 'monthly'
@@ -687,6 +688,7 @@ const donutPalette = ['#0f766e', '#2563eb', '#f59e0b', '#e11d48', '#475569']
 
 const formatCompactNumber = (value: number) => (Math.abs(value % 1) < 0.001 ? value.toFixed(0) : value.toFixed(2))
 const formatPercent = (value: number) => `${value.toFixed(2)}%`
+const formatProductName = formatProductNameForDisplay
 
 const formatDate = (value?: string | null) => {
   if (!value) return 'Not available'

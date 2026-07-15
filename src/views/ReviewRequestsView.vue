@@ -175,7 +175,9 @@
                   <td>{{ item.customer_name }}</td>
                   <td>{{ item.phone || 'Not available' }}</td>
                   <td>{{ formatDate(item.ordered_at) }}</td>
-                  <td class="product-cell">{{ item.product_name }}</td>
+                  <td class="product-cell">
+                    <span class="product-value">{{ formatProductName(item.product_name) }}</span>
+                  </td>
                   <td>{{ item.quantity_summary }}</td>
                   <td>{{ item.thickness_summary }}</td>
                   <td>
@@ -229,7 +231,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useReviewFollowupsStore } from '@/stores/reviewFollowups'
 import type { ReviewQueueFilters, ReviewQueueItem, ReviewRequestStatus } from '@/types'
-import { formatStandardDate } from '@/utils/orderData'
+import { formatProductNameForDisplay, formatStandardDate } from '@/utils/orderData'
 
 type ReviewGroup = {
   key: string
@@ -288,6 +290,7 @@ const normalizeIndianPhone = (value?: string | null) => {
 const canOpenWhatsApp = (value?: string | null) => normalizeIndianPhone(value) !== null
 
 const formatDate = (value: string) => formatStandardDate(value)
+const formatProductName = formatProductNameForDisplay
 
 const groupDateKey = (value: string) => {
   const date = new Date(value)

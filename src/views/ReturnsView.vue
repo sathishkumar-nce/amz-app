@@ -10,7 +10,7 @@
       </div>
       <div class="returns-hero__summary">
         <span class="summary-pill">{{ visibleRows.length }} product rows</span>
-        <span class="summary-pill">{{ ordersStore.pagination.total }} orders loaded</span>
+        <span class="summary-pill">{{ ordersStore.returnPagination.total }} orders loaded</span>
       </div>
     </section>
 
@@ -31,15 +31,6 @@
     >
       <template #extra>
         <label class="filter-field">
-          <span>Return initiated</span>
-          <select v-model="returnInitiatedFilter" class="filter-input" :disabled="ordersStore.loading">
-            <option value="">All return initiated states</option>
-            <option value="true">true</option>
-            <option value="false">false</option>
-          </select>
-        </label>
-
-        <label class="filter-field">
           <span>Return compromised</span>
           <select v-model="returnCompromisedFilter" class="filter-input" :disabled="ordersStore.loading">
             <option value="">All return compromised states</option>
@@ -56,9 +47,9 @@
 
       <template v-else>
         <ListUtilityBar
-          :total="ordersStore.pagination.total"
-          :page="ordersStore.pagination.page"
-          :total-pages="ordersStore.pagination.totalPages"
+          :total="ordersStore.returnPagination.total"
+          :page="ordersStore.returnPagination.page"
+          :total-pages="ordersStore.returnPagination.totalPages"
           item-label="orders"
           editable
           helper-text="Update the return fields inline, then save each row."
@@ -175,6 +166,14 @@
                   >
                     {{ savingRows[row.rowKey] ? 'Saving...' : 'Save' }}
                   </button>
+                  <button
+                    type="button"
+                    class="whatsapp-button"
+                    :disabled="!canOpenWhatsApp(row.order.phone)"
+                    @click.stop.prevent="openReturnWhatsApp(row.order)"
+                  >
+                    Send WhatsApp
+                  </button>
                   <router-link :to="`/orders/${row.order.amazon_order_id}`" class="view-link">View</router-link>
                   <p v-if="rowFeedback[row.rowKey]" class="row-feedback">{{ rowFeedback[row.rowKey] }}</p>
                 </td>
@@ -186,10 +185,10 @@
       </template>
 
       <PaginationControls
-        :page="ordersStore.pagination.page"
-        :total-pages="ordersStore.pagination.totalPages"
-        :total="ordersStore.pagination.total"
-        :limit="ordersStore.pagination.limit"
+        :page="ordersStore.returnPagination.page"
+        :total-pages="ordersStore.returnPagination.totalPages"
+        :total="ordersStore.returnPagination.total"
+        :limit="ordersStore.returnPagination.limit"
         item-label="orders"
         @change="changePage"
         @limit-change="changeLimit"
@@ -210,7 +209,7 @@ import { useAmazonRowHighlightRulesStore } from '@/stores/amazonRowHighlightRule
 import { useOrdersStore } from '@/stores/orders'
 import type { Order, OrderProduct, UpdateProductManualFieldsRequest } from '@/types'
 import { buildOrderListAdvancedRequest, createOrderListAdvancedFilters } from '@/utils/orderListFilters'
-import { formatStandardDate } from '@/utils/orderData'
+import { formatProductNameForDisplay, formatStandardDate } from '@/utils/orderData'
 import { sortItems, type SortDirection } from '@/utils/tableSort'
 
 type SheetRow = {
@@ -247,7 +246,6 @@ const sortState = ref<{ key: SortKey | null; direction: SortDirection }>({
 })
 const searchKey = ref('order_id')
 const searchValue = ref('')
-const returnInitiatedFilter = ref('')
 const returnCompromisedFilter = ref('')
 const SAVE_TIMEOUT_MS = 15000
 
@@ -258,9 +256,8 @@ const sheetWrapRef = ref<HTMLElement | null>(null)
 const capturedSheetScrollLeft = ref<number | null>(null)
 
 const productKey = (amazonOrderId: string, orderProductId: number) => `${amazonOrderId}:${orderProductId}`
-
 const sheetRows = computed<SheetRow[]>(() =>
-  ordersStore.orders.flatMap((order) =>
+  ordersStore.returns.flatMap((order) =>
     (order.products || [])
       .filter((product) => !product.is_discount_line)
       .map((product) => ({
@@ -324,10 +321,25 @@ const formatDate = (value?: string | null) => formatStandardDate(value)
 const formatText = (value?: string | null) => value?.trim() || 'Not available'
 const formatNumber = (value?: number | null) => (value == null ? 'Not set' : String(value))
 const formatLongText = (value?: string | null) => value?.trim() || 'Not available'
-const formatProductName = (value?: string | null) => {
-  const trimmed = value?.trim()
-  if (!trimmed) return 'Unnamed product'
-  return trimmed.length > 110 ? `${trimmed.slice(0, 110)}...` : trimmed
+const formatProductName = formatProductNameForDisplay
+const normalizeIndianPhone = (value?: string | null) => {
+  const digits = String(value || '').replace(/\D/g, '')
+  if (digits.length < 10) return null
+  return digits.slice(-10)
+}
+const canOpenWhatsApp = (value?: string | null) => normalizeIndianPhone(value) !== null
+const getCustomerName = (order: Order) => order.delivery_fullname?.trim() || order.user_login?.trim() || 'there'
+const buildReturnWhatsAppMessage = (order: Order) => `Hello ${getCustomerName(order)} 😊
+
+We noticed your return request for the MR.CLEAR Table Cover and are sorry that it didn’t fully meet your expectations.
+
+Please share the issue with us, we’ll be happy to help. For any size or customisation concern, we can remake it exactly as required and offer COD with 20% off as a small gesture from our side.`
+const openReturnWhatsApp = (order: Order) => {
+  const normalizedPhone = normalizeIndianPhone(order.phone)
+  if (!normalizedPhone) return
+
+  const url = `https://web.whatsapp.com/send?phone=91${normalizedPhone}&text=${encodeURIComponent(buildReturnWhatsAppMessage(order))}`
+  window.open(url, '_blank', 'noopener,noreferrer')
 }
 
 const captureSheetScroll = () => {
@@ -456,22 +468,17 @@ const saveRow = async (row: SheetRow) => {
 }
 
 const applyFilters = async () => {
-  const returnInitiatedValue =
-    returnInitiatedFilter.value === ''
-      ? undefined
-      : returnInitiatedFilter.value === 'true'
   const returnCompromisedValue =
     returnCompromisedFilter.value === ''
       ? undefined
       : returnCompromisedFilter.value === 'true'
 
-  await ordersStore.fetchOrders({
+  await ordersStore.fetchReturns({
     page: filters.value.page,
     limit: filters.value.limit,
     search_key: searchKey.value,
     search_value: searchValue.value.trim() || undefined,
     search_operator: searchOperator.value,
-    return_initiated: returnInitiatedValue,
     return_initiated_compromised: returnCompromisedValue,
     ...buildSearchFilters(),
     ...buildOrderListAdvancedRequest(advancedFilters.value),
@@ -489,7 +496,6 @@ const clearSearch = async () => {
   searchValue.value = ''
   searchOperator.value = 'gte'
   advancedFilters.value = createOrderListAdvancedFilters()
-  returnInitiatedFilter.value = ''
   returnCompromisedFilter.value = ''
   filters.value.page = 1
   await applyFilters()
@@ -813,7 +819,8 @@ h1 {
   opacity: 0.7;
 }
 
-.save-button {
+.save-button,
+.whatsapp-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -828,9 +835,20 @@ h1 {
   cursor: pointer;
 }
 
+.whatsapp-button {
+  margin-top: 0.6rem;
+  background: #dcfce7;
+  color: #166534;
+}
+
 .save-button:disabled {
   opacity: 0.7;
   cursor: wait;
+}
+
+.whatsapp-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 .view-link {

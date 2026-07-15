@@ -152,7 +152,7 @@ import ListUtilityBar from '@/components/ListUtilityBar.vue'
 import PaginationControls from '@/components/PaginationControls.vue'
 import { useAmazonRowHighlightRulesStore } from '@/stores/amazonRowHighlightRules'
 import type { Order, OrderFilters } from '@/types'
-import { formatStandardDate } from '@/utils/orderData'
+import { formatProductNameForDisplay, formatStandardDate } from '@/utils/orderData'
 
 type PresetValue = 'today' | 'yesterday' | 'last_7_days' | 'week_to_date' | 'month_to_date' | 'custom'
 type QueueMode = 'issues' | 'returns' | 'safety'
@@ -213,6 +213,7 @@ const statusLabel = props.mode === 'issues' ? 'Other Issues' : props.mode === 'r
 const detailLabel = props.mode === 'issues' ? 'Issue Details' : props.mode === 'returns' ? 'Return Details' : 'Claim Details'
 
 const formatDate = (dateString?: string | null) => formatStandardDate(dateString)
+const formatProductName = formatProductNameForDisplay
 const formatText = (value?: string | null) => value?.trim() || 'Not available'
 const formatLocation = (city?: string | null, state?: string | null) => [city, state].filter(Boolean).join(' / ') || 'Not available'
 
@@ -361,12 +362,12 @@ const getDetailValue = (order: Order) => {
   const products = getRelevantProducts(order)
   if (products.length === 0) return 'No matching product notes'
   if (props.mode === 'issues') {
-    return products.map((product) => product.other_issues_reason || product.name || product.sku || 'Issue item').join(' | ')
+    return products.map((product) => product.other_issues_reason || formatProductName(product.name) || product.sku || 'Issue item').join(' | ')
   }
   if (props.mode === 'returns') {
-    return products.map((product) => product.return_initiated_reason || product.return_initiated_followup_action || product.return_initiated_compromised_reason || product.name || product.sku || 'Return item').join(' | ')
+    return products.map((product) => product.return_initiated_reason || product.return_initiated_followup_action || product.return_initiated_compromised_reason || formatProductName(product.name) || product.sku || 'Return item').join(' | ')
   }
-  return products.map((product) => product.safety_claim_issues || product.name || product.sku || 'Safety item').join(' | ')
+  return products.map((product) => product.safety_claim_issues || formatProductName(product.name) || product.sku || 'Safety item').join(' | ')
 }
 
 const getRelevantProducts = (order: Order) => {
@@ -431,7 +432,7 @@ const displayedRows = computed(() => {
 const getProductSummary = (order: Order) => {
   const products = getRelevantProducts(order)
   if (products.length === 0) return 'No matching products'
-  return products.map((product) => product.sku || product.name || 'Product').join(', ')
+  return products.map((product) => formatProductName(product.name)).filter(Boolean).join(', ')
 }
 
 onMounted(() => {

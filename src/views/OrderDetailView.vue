@@ -99,7 +99,7 @@
           <article v-for="product in order.products" :key="product.order_product_id" class="product-card">
             <div class="product-card__title">
               <strong>{{ product.sku || 'No SKU' }}</strong>
-              <span>{{ product.name || 'Unnamed product' }}</span>
+              <span>{{ formatProductName(product.name) }}</span>
               <small>Qty {{ product.quantity ?? 0 }} · Thickness {{ product.thickness || 'Not set' }} · Updated by {{ product.updated_by || 'system' }}</small>
             </div>
 
@@ -224,7 +224,7 @@ import { reactive, ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useOrdersStore } from '@/stores/orders'
 import type { Order, OrderProduct, UpdateManualFieldsRequest, UpdateProductManualFieldsRequest } from '@/types'
-import { formatStandardDate } from '@/utils/orderData'
+import { formatProductNameForDisplay, formatStandardDate } from '@/utils/orderData'
 
 type ProductEditRow = {
   default_width_in_inches: string
@@ -269,6 +269,7 @@ const productMessages = reactive<Record<number, string>>({})
 const productErrors = reactive<Record<number, string>>({})
 
 const formatDate = (dateString?: string | null) => formatStandardDate(dateString)
+const formatProductName = formatProductNameForDisplay
 const formatLocation = (city?: string | null, state?: string | null) => [city, state].filter(Boolean).join(' / ') || 'Not available'
 const formatNumber = (value?: number | null) => (value == null ? 'Not set' : String(value))
 const nullishToString = (value?: string | null) => value ?? ''

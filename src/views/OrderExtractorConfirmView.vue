@@ -248,7 +248,7 @@ import { ordersApi } from '@/api/orders'
 import { useAmazonRowHighlightRulesStore } from '@/stores/amazonRowHighlightRules'
 import type { Order, OrderedAmazonOrderResult, OrderProduct, UpdateManualFieldsRequest, UpdateProductManualFieldsRequest } from '@/types'
 import { createOrderListAdvancedFilters, type OrderListAdvancedFilters } from '@/utils/orderListFilters'
-import { formatStandardDate } from '@/utils/orderData'
+import { formatProductNameForDisplay, formatStandardDate } from '@/utils/orderData'
 import { sortItems, type SortDirection } from '@/utils/tableSort'
 
 type SheetRow = {
@@ -382,11 +382,7 @@ const formatDate = (dateString?: string | null) => formatStandardDate(dateString
 const formatText = (value?: string | null) => value?.trim() || 'Not available'
 const formatNumber = (value?: number | null) => (value == null ? 'Not set' : String(value))
 const numberToString = (value?: number | null) => (value == null ? '' : String(value))
-const formatProductName = (value?: string | null) => {
-  const trimmed = value?.trim()
-  if (!trimmed) return 'Unnamed product'
-  return trimmed.length > 110 ? `${trimmed.slice(0, 110)}...` : trimmed
-}
+const formatProductName = formatProductNameForDisplay
 const normalizeIndianPhone = (value?: string | null) => {
   const digits = String(value || '').replace(/\D/g, '')
   if (digits.length < 10) return null

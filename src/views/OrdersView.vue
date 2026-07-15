@@ -112,8 +112,7 @@
               <td>{{ formatLocation(row.order.delivery_city, row.order.delivery_state) }}</td>
 
               <td class="cell-product">
-                <div class="product-sku">{{ row.product.sku || 'No SKU' }}</div>
-                <div class="product-title">{{ row.product.name || 'Unnamed product' }}</div>
+                <div class="product-title">{{ formatProductName(row.product.name) }}</div>
               </td>
 
               <td>{{ row.product.sku || 'Not set' }}</td>
@@ -269,7 +268,7 @@ import { useAmazonRowHighlightRulesStore } from '@/stores/amazonRowHighlightRule
 import { useOrdersStore } from '@/stores/orders'
 import type { Order, OrderProduct, UpdateProductManualFieldsRequest } from '@/types'
 import { buildOrderListAdvancedRequest, createOrderListAdvancedFilters } from '@/utils/orderListFilters'
-import { formatStandardDate } from '@/utils/orderData'
+import { formatProductNameForDisplay, formatStandardDate } from '@/utils/orderData'
 import { sortItems, type SortDirection } from '@/utils/tableSort'
 
 type ProductEditRow = {
@@ -401,6 +400,7 @@ const visibleRows = computed<VisibleRow[]>(() => {
 })
 
 const formatDate = (dateString?: string | null) => formatStandardDate(dateString)
+const formatProductName = formatProductNameForDisplay
 const formatText = (value?: string | null) => value?.trim() || 'Not available'
 const formatLocation = (city?: string | null, state?: string | null) => [city, state].filter(Boolean).join(' / ') || 'Not available'
 const formatNumber = (value?: number | null) => (value == null ? 'Not set' : String(value))
@@ -824,12 +824,6 @@ h1 {
 
 .cell-product {
   min-width: 420px;
-}
-
-.product-sku {
-  font-weight: 800;
-  color: #1e293b;
-  margin-bottom: 0.2rem;
 }
 
 .product-title {

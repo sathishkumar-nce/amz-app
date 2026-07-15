@@ -589,12 +589,12 @@
           </thead>
           <tbody>
             <tr v-for="row in sortedTopProducts" :key="row.product">
-              <td>{{ row.product }}</td>
+              <td><span class="product-value">{{ formatProductName(row.product) }}</span></td>
               <td>{{ row.orders }}</td>
               <td>{{ row.returns }}</td>
               <td>{{ formatPercent(row.return_rate) }}</td>
               <td>
-                <button type="button" class="inline-link" @click="activateDrilldown('product', row.product, `Product: ${row.product}`)">
+                <button type="button" class="inline-link" @click="activateDrilldown('product', row.product, `Product: ${formatProductName(row.product)}`)">
                   View matching returns
                 </button>
               </td>
@@ -647,7 +647,7 @@
             <tr v-for="row in drilldownRows" :key="`drilldown-${row.amazon_order_id}-${row.updated_at}`">
               <td>{{ row.amazon_order_id }}</td>
               <td>{{ formatDate(row.confirmed_date) }}</td>
-              <td>{{ row.product }}</td>
+              <td><span class="product-value">{{ formatProductName(row.product) }}</span></td>
               <td>{{ row.customer }}</td>
               <td>{{ row.phone }}</td>
               <td>{{ row.state }}</td>
@@ -695,6 +695,7 @@ import type {
   ReturnsDashboardTopProductRow,
 } from '@/types'
 import { exportRowsAsCsv, exportRowsAsExcel, exportRowsAsPdf, type ExportRow } from '@/utils/exportData'
+import { formatProductNameForDisplay } from '@/utils/orderData'
 
 type KpiTone = 'teal' | 'amber' | 'rose' | 'sky' | 'slate'
 type TrendGranularity = 'daily' | 'weekly' | 'monthly'
@@ -801,6 +802,7 @@ const formatCompactNumber = (value: number) => {
 }
 
 const formatPercent = (value: number) => `${value.toFixed(2)}%`
+const formatProductName = formatProductNameForDisplay
 
 const formatDate = (value?: string | null) => {
   if (!value) return 'Not available'

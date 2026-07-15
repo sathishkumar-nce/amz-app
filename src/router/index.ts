@@ -69,6 +69,24 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/extract-return-initiated',
+      name: 'extract-return-initiated',
+      component: () => import('@/views/ExtractReturnInitiatedView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/returned',
+      name: 'returned',
+      component: () => import('@/views/ReturnedView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/fresh-roll-issues',
+      name: 'fresh-roll-issues',
+      component: () => import('@/views/FreshRollIssuesView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/return-analytics',
       name: 'return-analytics',
       component: () => import('@/views/ReturnAnalyticsView.vue'),

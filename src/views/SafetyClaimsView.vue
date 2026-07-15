@@ -10,7 +10,7 @@
       </div>
       <div class="safety-hero__summary">
         <span class="summary-pill">{{ visibleRows.length }} product rows</span>
-        <span class="summary-pill">{{ ordersStore.pagination.total }} orders loaded</span>
+        <span class="summary-pill">{{ ordersStore.safetyClaimPagination.total }} orders loaded</span>
       </div>
     </section>
 
@@ -47,9 +47,9 @@
 
       <template v-else>
         <ListUtilityBar
-          :total="ordersStore.pagination.total"
-          :page="ordersStore.pagination.page"
-          :total-pages="ordersStore.pagination.totalPages"
+          :total="ordersStore.safetyClaimPagination.total"
+          :page="ordersStore.safetyClaimPagination.page"
+          :total-pages="ordersStore.safetyClaimPagination.totalPages"
           item-label="orders"
           editable
           helper-text="Update safety claim details inline, then save each row."
@@ -140,10 +140,10 @@
       </template>
 
       <PaginationControls
-        :page="ordersStore.pagination.page"
-        :total-pages="ordersStore.pagination.totalPages"
-        :total="ordersStore.pagination.total"
-        :limit="ordersStore.pagination.limit"
+        :page="ordersStore.safetyClaimPagination.page"
+        :total-pages="ordersStore.safetyClaimPagination.totalPages"
+        :total="ordersStore.safetyClaimPagination.total"
+        :limit="ordersStore.safetyClaimPagination.limit"
         item-label="orders"
         @change="changePage"
         @limit-change="changeLimit"
@@ -164,7 +164,7 @@ import { useAmazonRowHighlightRulesStore } from '@/stores/amazonRowHighlightRule
 import { useOrdersStore } from '@/stores/orders'
 import type { Order, OrderProduct, UpdateManualFieldsRequest, UpdateProductManualFieldsRequest } from '@/types'
 import { buildOrderListAdvancedRequest, createOrderListAdvancedFilters } from '@/utils/orderListFilters'
-import { formatStandardDate } from '@/utils/orderData'
+import { formatProductNameForDisplay, formatStandardDate } from '@/utils/orderData'
 import { sortItems, type SortDirection } from '@/utils/tableSort'
 
 type SheetRow = {
@@ -216,7 +216,7 @@ const capturedSheetScrollLeft = ref<number | null>(null)
 const productKey = (amazonOrderId: string, orderProductId: number) => `${amazonOrderId}:${orderProductId}`
 
 const sheetRows = computed<SheetRow[]>(() =>
-  ordersStore.orders.flatMap((order) =>
+  ordersStore.safetyClaims.flatMap((order) =>
     (order.products || [])
       .filter((product) => !product.is_discount_line)
       .map((product) => ({
@@ -284,11 +284,7 @@ const formatDate = (value?: string | null) => formatStandardDate(value)
 const formatText = (value?: string | null) => value?.trim() || 'Not available'
 const formatNumber = (value?: number | null) => (value == null ? 'Not set' : String(value))
 const formatLongText = (value?: string | null) => value?.trim() || 'Not available'
-const formatProductName = (value?: string | null) => {
-  const trimmed = value?.trim()
-  if (!trimmed) return 'Unnamed product'
-  return trimmed.length > 110 ? `${trimmed.slice(0, 110)}...` : trimmed
-}
+const formatProductName = formatProductNameForDisplay
 
 const captureSheetScroll = () => {
   capturedSheetScrollLeft.value = sheetWrapRef.value?.scrollLeft ?? null
@@ -410,7 +406,7 @@ const applyFilters = async () => {
       ? undefined
       : safetyClaimedFilter.value === 'true'
 
-  await ordersStore.fetchOrders({
+  await ordersStore.fetchSafetyClaims({
     page: filters.value.page,
     limit: filters.value.limit,
     search_key: searchKey.value,

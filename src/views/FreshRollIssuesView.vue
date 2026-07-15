@@ -1,14 +1,14 @@
 <template>
-  <div class="issues-page">
-    <section class="issues-hero">
+  <div class="fresh-page">
+    <section class="fresh-hero">
       <div>
-        <p class="eyebrow">Other issues workflow</p>
-        <h1>Other Issues</h1>
-        <p class="issues-hero__copy">
-          Product-first board for flagging other issues and capturing the issue reason inline before escalation or follow-up.
+        <p class="eyebrow">Fresh roll workflow</p>
+        <h1>Fresh Roll Issues</h1>
+        <p class="fresh-hero__copy">
+          Returned-order queue for tracking fresh roll follow-up and addressed actions.
         </p>
       </div>
-      <div class="issues-hero__summary">
+      <div class="fresh-hero__summary">
         <span class="summary-pill">{{ visibleRows.length }} product rows</span>
         <span class="summary-pill">{{ ordersStore.pagination.total }} orders loaded</span>
       </div>
@@ -28,22 +28,11 @@
       :loading="ordersStore.loading"
       @apply="applySearch"
       @clear="clearSearch"
-    >
-      <template #extra>
-        <label class="filter-field">
-          <span>Other issues</span>
-          <select v-model="otherIssuesFilter" class="filter-input" :disabled="ordersStore.loading">
-            <option value="">All other issues states</option>
-            <option value="true">true</option>
-            <option value="false">false</option>
-          </select>
-        </label>
-      </template>
-    </OrderListFilterBar>
+    />
 
-    <section class="issues-shell">
-      <div v-if="ordersStore.loading" class="empty-state">Loading other issues...</div>
-      <div v-else-if="visibleRows.length === 0" class="empty-state">No other-issues rows found.</div>
+    <section class="fresh-shell">
+      <div v-if="ordersStore.loading" class="empty-state">Loading fresh roll issues...</div>
+      <div v-else-if="visibleRows.length === 0" class="empty-state">No fresh roll issue rows found.</div>
 
       <template v-else>
         <ListUtilityBar
@@ -52,11 +41,11 @@
           :total-pages="ordersStore.pagination.totalPages"
           item-label="orders"
           editable
-          helper-text="Update the issue toggle and reason inline, then save each row."
+          helper-text="Update fresh roll fields inline, then save each row."
         />
 
         <div ref="sheetWrapRef" class="sheet-wrap">
-          <table class="issues-sheet">
+          <table class="fresh-sheet">
             <thead>
               <tr>
                 <th class="cell-order">Order ID</th>
@@ -65,16 +54,15 @@
                 </th>
                 <th class="cell-product">Products</th>
                 <th class="cell-customer">Customer</th>
-                <th class="cell-phone">Phone</th>
-                <th class="cell-city">City</th>
-                <th class="cell-quantity">
-                  <SortableHeader label="Quantity" :direction="sortState.key === 'quantity' ? sortState.direction : null" @sort="setSort('quantity', $event)" />
-                </th>
                 <th class="cell-size">Customer Width (in)</th>
                 <th class="cell-size">Customer Length (in)</th>
                 <th class="cell-notes">Corner Style and Notes</th>
-                <th class="cell-toggle">Other Issues</th>
-                <th class="cell-reason">Other Issues Reason</th>
+                <th class="cell-status-edit">
+                  <SortableHeader label="Order Status" :direction="sortState.key === 'order_status' ? sortState.direction : null" @sort="setSort('order_status', $event)" />
+                </th>
+                <th class="cell-toggle">Fresh Roll</th>
+                <th class="cell-toggle">Fresh Roll Addressed</th>
+                <th class="cell-action">Fresh Roll Addressed Action</th>
                 <th class="cell-actions">Actions</th>
               </tr>
             </thead>
@@ -89,32 +77,50 @@
                   <div class="product-title">{{ formatProductName(row.product.name) }}</div>
                 </td>
                 <td class="cell-customer">{{ formatText(row.order.delivery_fullname || row.order.user_login) }}</td>
-                <td class="cell-phone">{{ formatText(row.order.phone) }}</td>
-                <td class="cell-city">{{ formatText(row.order.delivery_city) }}</td>
-                <td class="cell-quantity">{{ formatNumber(row.product.quantity) }}</td>
                 <td class="cell-size">{{ formatNumber(row.product.customer_width_in_inches) }}</td>
                 <td class="cell-size">{{ formatNumber(row.product.customer_length_in_inches) }}</td>
                 <td class="cell-notes">{{ formatLongText(row.product.corner_radius_and_notes) }}</td>
+                <td class="cell-status-edit">
+                  <select v-model="row.orderEdit.order_status" class="sheet-input">
+                    <option value="received">received</option>
+                    <option value="manufactured">manufactured</option>
+                    <option value="cancelled">cancelled</option>
+                    <option value="returned">returned</option>
+                  </select>
+                </td>
                 <td class="cell-toggle">
                   <label class="toggle" :class="{ 'toggle--saving': savingRows[row.rowKey] }" @pointerdown="captureSheetScroll">
                     <input
-                      :checked="row.edit.other_issues"
+                      :checked="row.orderEdit.is_fresh_roll"
                       type="checkbox"
-                      @change="setOtherIssues(row, ($event.target as HTMLInputElement).checked)"
+                      @change="setOrderToggle(row, 'is_fresh_roll', ($event.target as HTMLInputElement).checked)"
                     />
                     <span class="toggle__track">
                       <span class="toggle__thumb" />
                     </span>
-                    <span class="toggle__label">{{ row.edit.other_issues ? 'True' : 'False' }}</span>
+                    <span class="toggle__label">{{ row.orderEdit.is_fresh_roll ? 'True' : 'False' }}</span>
                   </label>
                 </td>
-                <td class="cell-reason">
+                <td class="cell-toggle">
+                  <label class="toggle" :class="{ 'toggle--saving': savingRows[row.rowKey] }" @pointerdown="captureSheetScroll">
+                    <input
+                      :checked="row.orderEdit.is_fresh_roll_addressed"
+                      type="checkbox"
+                      @change="setOrderToggle(row, 'is_fresh_roll_addressed', ($event.target as HTMLInputElement).checked)"
+                    />
+                    <span class="toggle__track">
+                      <span class="toggle__thumb" />
+                    </span>
+                    <span class="toggle__label">{{ row.orderEdit.is_fresh_roll_addressed ? 'True' : 'False' }}</span>
+                  </label>
+                </td>
+                <td class="cell-action">
                   <textarea
-                    v-model="row.edit.other_issues_reason"
+                    v-model="row.orderEdit.fresh_roll_addressed_action"
                     rows="3"
                     class="sheet-textarea"
                     maxlength="500"
-                    placeholder="Other issues reason"
+                    placeholder="Fresh roll addressed action"
                   />
                 </td>
                 <td class="cell-actions">
@@ -159,7 +165,7 @@ import SortableHeader from '@/components/SortableHeader.vue'
 import StickyHorizontalScrollbar from '@/components/StickyHorizontalScrollbar.vue'
 import { useAmazonRowHighlightRulesStore } from '@/stores/amazonRowHighlightRules'
 import { useOrdersStore } from '@/stores/orders'
-import type { Order, OrderProduct, UpdateProductManualFieldsRequest } from '@/types'
+import type { Order, OrderProduct, UpdateManualFieldsRequest } from '@/types'
 import { buildOrderListAdvancedRequest, createOrderListAdvancedFilters } from '@/utils/orderListFilters'
 import { formatProductNameForDisplay, formatStandardDate } from '@/utils/orderData'
 import { sortItems, type SortDirection } from '@/utils/tableSort'
@@ -170,16 +176,18 @@ type SheetRow = {
   product: OrderProduct
 }
 
-type IssueEditRow = {
-  other_issues: boolean
-  other_issues_reason: string
+type OrderEditRow = {
+  order_status: string
+  is_fresh_roll: boolean
+  is_fresh_roll_addressed: boolean
+  fresh_roll_addressed_action: string
 }
 
 type VisibleRow = SheetRow & {
-  edit: IssueEditRow
+  orderEdit: OrderEditRow
 }
 
-type SortKey = 'confirmed_date' | 'quantity'
+type SortKey = 'confirmed_date' | 'order_status'
 
 const ordersStore = useOrdersStore()
 const rowHighlightRulesStore = useAmazonRowHighlightRulesStore()
@@ -195,10 +203,9 @@ const sortState = ref<{ key: SortKey | null; direction: SortDirection }>({
 })
 const searchKey = ref('order_id')
 const searchValue = ref('')
-const otherIssuesFilter = ref('')
 const SAVE_TIMEOUT_MS = 15000
 
-const rowEdits = reactive<Record<string, IssueEditRow>>({})
+const orderEdits = reactive<Record<string, OrderEditRow>>({})
 const savingRows = reactive<Record<string, boolean>>({})
 const rowFeedback = reactive<Record<string, string>>({})
 const sheetWrapRef = ref<HTMLElement | null>(null)
@@ -218,21 +225,23 @@ const sheetRows = computed<SheetRow[]>(() =>
   ),
 )
 
-const buildRowEdit = (row: SheetRow): IssueEditRow => ({
-  other_issues: row.product.other_issues === true,
-  other_issues_reason: row.product.other_issues_reason ?? '',
+const buildOrderEdit = (order: Order): OrderEditRow => ({
+  order_status: order.order_status || 'received',
+  is_fresh_roll: order.is_fresh_roll === true,
+  is_fresh_roll_addressed: order.is_fresh_roll_addressed === true,
+  fresh_roll_addressed_action: order.fresh_roll_addressed_action ?? '',
 })
 
-const ensureRowEdit = (row: SheetRow) => {
-  if (!rowEdits[row.rowKey]) {
-    rowEdits[row.rowKey] = buildRowEdit(row)
+const ensureOrderEdit = (order: Order) => {
+  if (!orderEdits[order.amazon_order_id]) {
+    orderEdits[order.amazon_order_id] = buildOrderEdit(order)
   }
-  return rowEdits[row.rowKey] as IssueEditRow
+  return orderEdits[order.amazon_order_id] as OrderEditRow
 }
 
-const syncRowEdits = () => {
+const syncEdits = () => {
   for (const row of sheetRows.value) {
-    rowEdits[row.rowKey] = buildRowEdit(row)
+    orderEdits[row.order.amazon_order_id] = buildOrderEdit(row.order)
   }
 }
 
@@ -240,7 +249,7 @@ const visibleRows = computed<VisibleRow[]>(() => {
   const rows = sheetRows.value
     .map((row) => ({
       ...row,
-      edit: ensureRowEdit(row),
+      orderEdit: ensureOrderEdit(row.order),
     }))
 
   if (!sortState.value.key) return rows
@@ -249,7 +258,7 @@ const visibleRows = computed<VisibleRow[]>(() => {
     if (sortState.value.key === 'confirmed_date') {
       return row.order.date_confirmed || row.order.date_add || ''
     }
-    return row.product.quantity
+    return row.order.order_status || ''
   }, sortState.value.direction)
 })
 
@@ -285,10 +294,14 @@ const restoreSheetScroll = async () => {
   })
 }
 
-const setOtherIssues = (row: SheetRow, checked: boolean) => {
-  rowEdits[row.rowKey] = {
-    ...ensureRowEdit(row),
-    other_issues: checked,
+const setOrderToggle = (
+  row: SheetRow,
+  field: 'is_fresh_roll' | 'is_fresh_roll_addressed',
+  checked: boolean,
+) => {
+  orderEdits[row.order.amazon_order_id] = {
+    ...ensureOrderEdit(row.order),
+    [field]: checked,
   }
   void restoreSheetScroll()
 }
@@ -339,53 +352,50 @@ const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number) => {
   }
 }
 
-const saveProductFields = async (row: SheetRow, payload: UpdateProductManualFieldsRequest, successMessage: string) => {
+const saveRow = async (row: VisibleRow) => {
+  const orderEdit = row.orderEdit
+
   savingRows[row.rowKey] = true
   rowFeedback[row.rowKey] = ''
 
   try {
+    const orderPayload: UpdateManualFieldsRequest = {
+      order_status: orderEdit.order_status || 'received',
+      is_fresh_roll: orderEdit.is_fresh_roll,
+      is_fresh_roll_addressed: orderEdit.is_fresh_roll_addressed,
+      fresh_roll_addressed_action: orderEdit.fresh_roll_addressed_action.trim() || '',
+    }
+
     await withTimeout(
-      ordersStore.updateProductManualFields(row.order.amazon_order_id, row.product.order_product_id, payload),
+      ordersStore.updateOrderManualFields(row.order.amazon_order_id, orderPayload),
       SAVE_TIMEOUT_MS,
     )
-    rowFeedback[row.rowKey] = successMessage
-    syncRowEdits()
+
+    rowFeedback[row.rowKey] = 'Fresh roll details saved'
+    syncEdits()
   } catch (error: any) {
     rowFeedback[row.rowKey] = error?.response?.data?.error || error?.message || 'Failed to save row'
-    rowEdits[row.rowKey] = buildRowEdit(row)
   } finally {
     savingRows[row.rowKey] = false
     window.setTimeout(() => {
-      if (rowFeedback[row.rowKey] === successMessage) {
+      if (rowFeedback[row.rowKey] === 'Fresh roll details saved') {
         rowFeedback[row.rowKey] = ''
       }
     }, 2500)
   }
 }
 
-const saveRow = async (row: SheetRow) => {
-  const edit = ensureRowEdit(row)
+const applyFilters = async () => {
+  const hasSearchValue = searchValue.value.trim() !== ''
+  const advancedRequest = buildOrderListAdvancedRequest(advancedFilters.value)
 
-  if (edit.other_issues && !edit.other_issues_reason.trim()) {
-    rowFeedback[row.rowKey] = 'Enter other_issues_reason before saving.'
-    return
+  if (hasSearchValue && searchKey.value !== 'order_status') {
+    delete advancedRequest.order_status
   }
 
-  await saveProductFields(
-    row,
-    {
-      other_issues: edit.other_issues,
-      other_issues_reason: edit.other_issues_reason.trim() || '',
-    },
-    'Other issue details saved',
-  )
-}
-
-const applyFilters = async () => {
-  const otherIssuesValue =
-    otherIssuesFilter.value === ''
-      ? undefined
-      : otherIssuesFilter.value === 'true'
+  if (!hasSearchValue) {
+    advancedRequest.order_status = 'returned'
+  }
 
   await ordersStore.fetchOrders({
     page: filters.value.page,
@@ -393,11 +403,11 @@ const applyFilters = async () => {
     search_key: searchKey.value,
     search_value: searchValue.value.trim() || undefined,
     search_operator: searchOperator.value,
-    other_issues: otherIssuesValue,
+    ...advancedRequest,
     ...buildSearchFilters(),
-    ...buildOrderListAdvancedRequest(advancedFilters.value),
+    is_fresh_roll: true,
   })
-  syncRowEdits()
+  syncEdits()
 }
 
 const applySearch = async () => {
@@ -410,7 +420,6 @@ const clearSearch = async () => {
   searchValue.value = ''
   searchOperator.value = 'gte'
   advancedFilters.value = createOrderListAdvancedFilters()
-  otherIssuesFilter.value = ''
   filters.value.page = 1
   await applyFilters()
 }
@@ -435,30 +444,30 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.issues-page {
+.fresh-page {
   max-width: 1880px;
   margin: 0 auto;
   display: grid;
   gap: 1rem;
 }
 
-.issues-hero,
-.issues-shell {
+.fresh-hero,
+.fresh-shell {
   background: rgba(255, 255, 255, 0.95);
   border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 24px;
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
 }
 
-.issues-hero {
+.fresh-hero {
   padding: 1.5rem 1.65rem;
   display: flex;
   justify-content: space-between;
   gap: 1rem;
   align-items: flex-start;
   background:
-    radial-gradient(circle at top right, rgba(248, 113, 113, 0.16), transparent 32%),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(254, 242, 242, 0.92));
+    radial-gradient(circle at top right, rgba(251, 146, 60, 0.16), transparent 32%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(255, 247, 237, 0.92));
 }
 
 .eyebrow {
@@ -478,13 +487,13 @@ h1 {
   font-weight: 900;
 }
 
-.issues-hero__copy {
+.fresh-hero__copy {
   margin: 0.8rem 0 0;
   max-width: 64ch;
   color: #475569;
 }
 
-.issues-hero__summary {
+.fresh-hero__summary {
   display: flex;
   gap: 0.7rem;
   flex-wrap: wrap;
@@ -503,21 +512,10 @@ h1 {
   color: #475569;
 }
 
-.issues-shell {
+.fresh-shell {
   padding: 1rem;
   display: grid;
   gap: 1rem;
-}
-
-.issues-filter-shell {
-  padding: 1rem;
-  background: rgba(255, 255, 255, 0.95);
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 24px;
-  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
-  display: flex;
-  gap: 0.75rem;
-  align-items: center;
 }
 
 .sheet-wrap {
@@ -525,22 +523,22 @@ h1 {
   padding-bottom: 0.25rem;
 }
 
-.issues-sheet {
+.fresh-sheet {
   width: max-content;
   min-width: 100%;
   border-collapse: separate;
   border-spacing: 0;
 }
 
-.issues-sheet th,
-.issues-sheet td {
+.fresh-sheet th,
+.fresh-sheet td {
   padding: 1rem 0.75rem;
   text-align: left;
   vertical-align: top;
   border-bottom: 1px solid #e2e8f0;
 }
 
-.issues-sheet th {
+.fresh-sheet th {
   position: sticky;
   top: 0;
   z-index: 1;
@@ -568,36 +566,32 @@ h1 {
   min-width: 180px;
 }
 
-.cell-phone,
-.cell-city {
-  min-width: 140px;
-}
-
-.cell-quantity,
 .cell-size {
-  min-width: 110px;
+  min-width: 120px;
 }
 
-.cell-notes {
+.cell-notes,
+.cell-action {
   min-width: 300px;
-  max-width: 300px;
+  max-width: 320px;
   white-space: normal;
   word-break: break-word;
 }
 
-.cell-toggle {
-  min-width: 180px;
+.cell-status-edit {
+  min-width: 170px;
 }
 
-.cell-reason {
-  min-width: 340px;
+.cell-toggle {
+  min-width: 190px;
 }
 
 .cell-actions {
   min-width: 150px;
 }
 
-.order-id-line {
+.order-id-line,
+.product-title {
   font-weight: 800;
   color: #0f172a;
 }
@@ -609,34 +603,14 @@ h1 {
 }
 
 .product-title {
-  color: #0f172a;
-  font-weight: 700;
   line-height: 1.45;
   white-space: normal;
   word-break: break-word;
 }
 
+.sheet-input,
 .sheet-textarea {
   width: 100%;
-  min-height: 5.5rem;
-  resize: vertical;
-  border-radius: 18px;
-  border: 1px solid #cbd5e1;
-  padding: 0.85rem 0.95rem;
-  font: inherit;
-  color: #0f172a;
-  background: #ffffff;
-}
-
-.sheet-textarea:focus {
-  outline: none;
-  border-color: #0f766e;
-  box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.12);
-}
-
-.filter-input {
-  min-width: 240px;
-  min-height: 3rem;
   border-radius: 14px;
   border: 1px solid rgba(148, 163, 184, 0.4);
   background: #ffffff;
@@ -645,22 +619,16 @@ h1 {
   font: inherit;
 }
 
-.filter-button {
-  min-height: 3rem;
-  padding: 0 1.2rem;
-  border-radius: 14px;
-  border: 0;
-  background: #0f766e;
-  color: #ffffff;
-  font: inherit;
-  font-weight: 800;
-  cursor: pointer;
+.sheet-textarea {
+  min-height: 5.5rem;
+  resize: vertical;
 }
 
-.filter-button:disabled,
-.filter-input:disabled {
-  opacity: 0.7;
-  cursor: wait;
+.sheet-input:focus,
+.sheet-textarea:focus {
+  outline: none;
+  border-color: #0f766e;
+  box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.12);
 }
 
 .toggle {
@@ -717,18 +685,22 @@ h1 {
   opacity: 0.7;
 }
 
-.save-button {
+.save-button,
+.view-link {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-width: 110px;
   min-height: 2.8rem;
-  border: 0;
   border-radius: 999px;
+  font-weight: 800;
+}
+
+.save-button {
+  border: 0;
   background: #0f766e;
   color: #ffffff;
   font: inherit;
-  font-weight: 800;
   cursor: pointer;
 }
 
@@ -738,16 +710,9 @@ h1 {
 }
 
 .view-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 110px;
-  min-height: 2.8rem;
   margin-top: 0.6rem;
-  border-radius: 999px;
   background: #e2e8f0;
   color: #1d4ed8;
-  font-weight: 800;
   text-decoration: none;
 }
 
@@ -766,17 +731,12 @@ h1 {
 }
 
 @media (max-width: 900px) {
-  .issues-hero {
+  .fresh-hero {
     flex-direction: column;
   }
 
-  .issues-hero__summary {
+  .fresh-hero__summary {
     justify-content: flex-start;
-  }
-
-  .issues-filter-shell {
-    flex-direction: column;
-    align-items: stretch;
   }
 }
 </style>

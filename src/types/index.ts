@@ -132,6 +132,9 @@ export interface Order {
   order_status: string
   order_status_updated_at?: string | null
   is_round?: boolean
+  is_fresh_roll?: boolean
+  is_fresh_roll_addressed?: boolean
+  fresh_roll_addressed_action?: string | null
   review_confidence: number
   review_confidence_updated_at?: string | null
   updated_by?: string | null
@@ -170,6 +173,8 @@ export interface OrderFilters {
   return_initiated_compromised?: boolean | string
   safety_claimed?: boolean | string
   is_round?: boolean | string
+  is_fresh_roll?: boolean | string
+  is_fresh_roll_addressed?: boolean | string
   round_product?: boolean
   has_customer_inputs?: boolean
   missing_customer_inputs?: boolean
@@ -691,6 +696,9 @@ export interface UpdateManualFieldsRequest {
   safety_claim?: string
   safety_claim_notes?: string
   is_round?: boolean
+  is_fresh_roll?: boolean
+  is_fresh_roll_addressed?: boolean
+  fresh_roll_addressed_action?: string
   review_confidence?: number
 }
 

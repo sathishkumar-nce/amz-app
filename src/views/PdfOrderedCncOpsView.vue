@@ -391,7 +391,7 @@
                   <td class="cell-pdf">{{ row.source.fileName }}</td>
                   <td class="cell-page">{{ row.source.pageNumber }}</td>
                   <td class="cell-product">
-                    <div class="product-title" :title="row.product.name || 'Unnamed product'">{{ row.product.name || 'Unnamed product' }}</div>
+                    <div class="product-title">{{ formatProductName(row.product.name) }}</div>
                   </td>
                   <td class="cell-order">
                     <div
@@ -542,7 +542,7 @@ import { useAmazonRowHighlightRulesStore } from '@/stores/amazonRowHighlightRule
 import { useOrdersStore } from '@/stores/orders'
 import { usePdfCncQueueStore, type PdfQueueExtractedEntry } from '@/stores/pdfCncQueue'
 import type { ChangedAmazonOrderResult, Order, OrderProduct, OrderedAmazonOrderResult, UpdateManualFieldsRequest, UpdateProductManualFieldsRequest } from '@/types'
-import { formatStandardDate } from '@/utils/orderData'
+import { formatProductNameForDisplay, formatStandardDate } from '@/utils/orderData'
 import { extractAmazonOrderIdsFromPdf } from '@/utils/pdfOrderExtraction'
 import { createOrderListAdvancedFilters, type OrderListAdvancedFilters } from '@/utils/orderListFilters'
 
@@ -766,6 +766,7 @@ const duplicateOrderRowCounts = computed(() => {
 
 const formatDate = (dateString?: string | null) => formatStandardDate(dateString)
 const formatDateTime = (dateString?: string | null) => formatStandardDate(dateString)
+const formatProductName = formatProductNameForDisplay
 const formatText = (value?: string | null) => value?.trim() || 'Not available'
 const formatNumber = (value?: number | null) => (value == null ? 'Not set' : String(value))
 const numberToString = (value?: number | null) => (value == null ? '' : String(value))
@@ -2760,10 +2761,6 @@ h1 {
   font-weight: 700;
   font-size: 0.92rem;
   line-height: 1.32;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
-  overflow: hidden;
 }
 
 .cell-thickness {

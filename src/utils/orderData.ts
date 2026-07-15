@@ -1,5 +1,8 @@
 import type { Order, OrderListResponse, OrderProduct } from '@/types'
 
+const productDimensionPattern = /\|\s*\(\s*\d+(?:\.\d+)?\s*x\s*\d+(?:\.\d+)?\s*Inches\s*,\s*\d+(?:\.\d+)?\s*mm\s*\)\s*\|/gi
+const PRODUCT_NAME_FALLBACK_LIMIT = 25
+
 const dateFields = new Set([
   'date_confirmed',
   'date_add',
@@ -132,6 +135,9 @@ export function normalizeOrder(order: unknown): Order {
     priority: String(normalized.priority ?? 'p3'),
     order_status: String(normalized.order_status ?? 'received'),
     order_status_updated_at: (normalized.order_status_updated_at as string | null | undefined) ?? null,
+    is_fresh_roll: Boolean(normalized.is_fresh_roll),
+    is_fresh_roll_addressed: Boolean(normalized.is_fresh_roll_addressed),
+    fresh_roll_addressed_action: (normalized.fresh_roll_addressed_action as string | null | undefined) ?? null,
     review_confidence: Number(normalized.review_confidence ?? 0),
     review_confidence_updated_at: (normalized.review_confidence_updated_at as string | null | undefined) ?? null,
     internal_notes: (normalized.internal_notes as string | null | undefined) ?? null,
@@ -152,6 +158,14 @@ export function normalizeOrderListResponse(response: OrderListResponse): OrderLi
     ...response,
     data: response.data.map((order) => normalizeOrder(order)),
   }
+}
+
+export function formatProductNameForDisplay(value?: string | null): string {
+  if (!value) return ''
+  const matches = [...value.matchAll(productDimensionPattern)]
+    .map((match) => match[0].replace(/\s+/g, ' ').trim())
+    .join(', ')
+  return matches || value.trim().slice(0, PRODUCT_NAME_FALLBACK_LIMIT)
 }
 
 export function formatStandardDate(dateString?: string | null): string {
