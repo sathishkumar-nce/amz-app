@@ -96,7 +96,7 @@
                 <td class="cell-size">{{ formatNumber(row.product.customer_length_in_inches) }}</td>
                 <td class="cell-notes">{{ formatLongText(row.product.corner_radius_and_notes) }}</td>
                 <td class="cell-toggle">
-                  <label class="toggle" :class="{ 'toggle--saving': savingRows[row.rowKey] }">
+                  <label class="toggle" :class="{ 'toggle--saving': savingRows[row.rowKey] }" @pointerdown="captureSheetScroll">
                     <input
                       :checked="row.edit.other_issues"
                       type="checkbox"
@@ -150,7 +150,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import ListUtilityBar from '@/components/ListUtilityBar.vue'
 import OrderListFilterBar from '@/components/OrderListFilterBar.vue'
 import OrderSearchBar from '@/components/OrderSearchBar.vue'
@@ -202,6 +202,7 @@ const rowEdits = reactive<Record<string, IssueEditRow>>({})
 const savingRows = reactive<Record<string, boolean>>({})
 const rowFeedback = reactive<Record<string, string>>({})
 const sheetWrapRef = ref<HTMLElement | null>(null)
+const capturedSheetScrollLeft = ref<number | null>(null)
 
 const productKey = (amazonOrderId: string, orderProductId: number) => `${amazonOrderId}:${orderProductId}`
 
@@ -267,11 +268,33 @@ const formatProductName = (value?: string | null) => {
   return trimmed.length > 110 ? `${trimmed.slice(0, 110)}...` : trimmed
 }
 
+const captureSheetScroll = () => {
+  capturedSheetScrollLeft.value = sheetWrapRef.value?.scrollLeft ?? null
+}
+
+const restoreSheetScroll = async () => {
+  const target = sheetWrapRef.value
+  const scrollLeft = capturedSheetScrollLeft.value ?? target?.scrollLeft ?? null
+  capturedSheetScrollLeft.value = null
+  if (!target || scrollLeft == null) return
+
+  await nextTick()
+  const keepScrollPosition = () => {
+    target.scrollLeft = scrollLeft
+  }
+  keepScrollPosition()
+  window.requestAnimationFrame(() => {
+    keepScrollPosition()
+    window.requestAnimationFrame(keepScrollPosition)
+  })
+}
+
 const setOtherIssues = (row: SheetRow, checked: boolean) => {
   rowEdits[row.rowKey] = {
     ...ensureRowEdit(row),
     other_issues: checked,
   }
+  void restoreSheetScroll()
 }
 
 const buildSearchFilters = () => {
@@ -645,6 +668,7 @@ h1 {
 }
 
 .toggle {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 0.75rem;
@@ -653,6 +677,10 @@ h1 {
 
 .toggle input {
   position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
   opacity: 0;
   pointer-events: none;
 }
