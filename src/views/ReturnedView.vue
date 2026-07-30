@@ -267,10 +267,7 @@ const restoreSheetScroll = async () => {
 }
 
 const setOrderToggle = (row: SheetRow, field: 'is_fresh_roll', checked: boolean) => {
-  orderEdits[row.order.amazon_order_id] = {
-    ...ensureOrderEdit(row.order),
-    [field]: checked,
-  }
+  ensureOrderEdit(row.order)[field] = checked
   void restoreSheetScroll()
 }
 
@@ -321,7 +318,7 @@ const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number) => {
 }
 
 const saveRow = async (row: VisibleRow) => {
-  const orderEdit = row.orderEdit
+  const orderEdit = ensureOrderEdit(row.order)
 
   savingRows[row.rowKey] = true
   rowFeedback[row.rowKey] = ''

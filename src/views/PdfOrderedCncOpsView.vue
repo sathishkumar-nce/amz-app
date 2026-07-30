@@ -1680,7 +1680,7 @@ function matchesAdvancedFilters(row: VisibleRow, filters: OrderListAdvancedFilte
   if (filters.sku && !includesText(row.product.sku, filters.sku)) {
     return false
   }
-  if (filters.is_round && !Boolean(row.product.is_round)) {
+  if (filters.is_round && !row.product.is_round) {
     return false
   }
   if (filters.customer_inputs_mode === 'has_customer_inputs' && !productHasCustomerInputs(row.product)) {
