@@ -140,7 +140,7 @@
                       :key="`${row.rowKey}-width-${step}`"
                       type="button"
                       class="increment-button"
-                      @click="applyInchIncrement(row.itemEdit, 'customer_width_in_inches', step)"
+                      @click="applyInchIncrement(row, 'customer_width_in_inches', step)"
                     >
                       +{{ step.toFixed(2) }}
                     </button>
@@ -154,7 +154,7 @@
                       :key="`${row.rowKey}-length-${step}`"
                       type="button"
                       class="increment-button"
-                      @click="applyInchIncrement(row.itemEdit, 'customer_length_in_inches', step)"
+                      @click="applyInchIncrement(row, 'customer_length_in_inches', step)"
                     >
                       +{{ step.toFixed(2) }}
                     </button>
@@ -219,10 +219,10 @@ import type { DirectOrder, DirectOrderFilters, DirectOrderItem, UpdateDirectOrde
 import { buildDirectOrderAdvancedRequest, createDirectOrderAdvancedFilters } from '@/utils/directOrderListFilters'
 
 type ItemEditRow = {
-  customer_width_in_inches: string
-  customer_length_in_inches: string
-  customer_width_in_mm: string
-  customer_length_in_mm: string
+  customer_width_in_inches: string | number
+  customer_length_in_inches: string | number
+  customer_width_in_mm: string | number
+  customer_length_in_mm: string | number
   corner_radius_and_notes: string
 }
 
@@ -241,7 +241,7 @@ type VisibleRow = {
 }
 
 const store = useDirectOrdersStore()
-const incrementSteps = [0, 0.1, 0.2, 0.25, 0.5, 0.75, 1]
+const incrementSteps = [0, 0.1, 0.2, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
 const SAVE_TIMEOUT_MS = 15000
 const AUTO_SAVE_DEBOUNCE_MS = 500
 const issueRequiredStatuses = new Set(['cancelled', 'on-hold', 'other-issues', 'returned'])
@@ -269,8 +269,8 @@ const autoSaveRowCache = new Map<string, VisibleRow>()
 const queuedAutoSaveKeys = new Set<string>()
 const activeSavePromises = new Map<string, Promise<void>>()
 const numberToString = (value?: number | null) => (value == null ? '' : String(value))
-const toOptionalNumber = (value?: string | null) => {
-  if (!value?.trim()) return undefined
+const toOptionalNumber = (value?: string | number | null) => {
+  if (value == null || (typeof value === 'string' && !value.trim())) return undefined
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : undefined
 }
@@ -379,14 +379,16 @@ const rowHighlightClass = (status: string) => {
 const roundToTwo = (value: number) => (Math.round(value * 100) / 100).toFixed(2)
 
 const applyInchIncrement = (
-  edit: ItemEditRow,
+  row: VisibleRow,
   field: 'customer_width_in_inches' | 'customer_length_in_inches',
   delta: number,
 ) => {
+  const edit = row.itemEdit
   const mmField = field === 'customer_width_in_inches' ? 'customer_width_in_mm' : 'customer_length_in_mm'
   const currentInches = Number(edit[field] || 0)
   const nextInches = currentInches + delta
   edit[mmField] = roundToTwo(nextInches * 25.4)
+  scheduleItemFieldAutoSave(row)
 }
 
 const formatInchDifference = (
@@ -603,6 +605,9 @@ const autoSaveRowByKey = async (rowKey: string) => {
   queuedAutoSaveKeys.delete(key)
 
   const request = (async () => {
+    savingRows[key] = true
+    rowFeedback[key] = ''
+
     try {
       const updated = await withTimeout(
         directOrdersApi.update(row.order.order_id, {
@@ -616,10 +621,12 @@ const autoSaveRowByKey = async (rowKey: string) => {
         itemEdits[key] = buildItemEdit(updatedItem)
       }
       orderEdits[row.order.order_id] = buildOrderEdit(updated)
+      rowFeedback[key] = 'Saved automatically'
     } catch (error: any) {
       rowFeedback[key] = error.response?.data?.error || error.message || 'Auto-save failed'
     } finally {
       activeSavePromises.delete(key)
+      savingRows[key] = false
       if (queuedAutoSaveKeys.has(key)) {
         queuedAutoSaveKeys.delete(key)
         queueAutoSave(key, 0)

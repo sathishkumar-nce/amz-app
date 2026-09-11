@@ -333,7 +333,7 @@ const sortState = ref<{ key: SortKey | null; direction: SortDirection }>({
 })
 const searchKey = ref('order_id')
 const searchValue = ref('')
-const incrementSteps = [0, 0.1, 0.2, 0.25, 0.5, 0.75, 1]
+const incrementSteps = [0, 0.1, 0.2, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
 const SAVE_TIMEOUT_MS = 15000
 const AUTO_SAVE_DEBOUNCE_MS = 500
 const productEdits = reactive<Record<string, ProductEditRow>>({})
