@@ -601,7 +601,7 @@ const ordersStore = useOrdersStore()
 const rowHighlightRulesStore = useAmazonRowHighlightRulesStore()
 const pdfQueueStore = usePdfCncQueueStore()
 const { extractedEntries, lookupResults, missingOrderIds, lastSuccessfulSyncAt, fileSummaries, queuedOrderIdCount, redundantOrderEntries } = storeToRefs(pdfQueueStore)
-const incrementSteps = [0, 0.1, 0.2, 0.25, 0.5, 0.75, 1]
+const incrementSteps = [0, 0.1, 0.2, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
 const SAVE_TIMEOUT_MS = 15000
 const AUTO_SAVE_DEBOUNCE_MS = 500
 const POLL_INTERVAL_MS = 5000
@@ -1520,15 +1520,20 @@ const autoSaveProductRowByKey = async (rowKey: string) => {
   queuedAutoSaveKeys.delete(key)
 
   const request = (async () => {
+    savingProducts[key] = true
+    productFeedback[key] = ''
+
     try {
       await withTimeout(
         ordersApi.updateProductManualFields(baseRow.order.amazon_order_id, baseRow.product.order_product_id, buildProductPayload(edit)),
         SAVE_TIMEOUT_MS,
       )
+      productFeedback[key] = 'Saved automatically'
     } catch (error: any) {
       productFeedback[key] = error.response?.data?.error || error.message || 'Auto-save failed'
     } finally {
       activeSavePromises.delete(key)
+      savingProducts[key] = false
       if (queuedAutoSaveKeys.has(key)) {
         queuedAutoSaveKeys.delete(key)
         queueAutoSave(key, 0)
