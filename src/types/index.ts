@@ -904,6 +904,46 @@ export interface DirectOrderListResponse {
   total_pages: number
 }
 
+export type IntegratedCourier = 'delhivery' | 'dtdc'
+
+export interface DTDCSettings {
+  missing_config: string[]
+  service_type: string
+  commodity?: string
+  service_type_options?: string[]
+  commodity_options?: { id: string; name: string }[]
+  tracking_enabled: boolean
+  service_modes?: CourierServiceMode[]
+  auto_download_labels?: boolean
+  label_code?: string
+}
+
+export interface DTDCPiece {
+  description: string
+  declared_value: string
+  weight: string
+  length: string
+  width: string
+  height: string
+}
+
+export interface DTDCBookingOptions {
+  service_type_id?: string
+  commodity_id?: string
+  pieces_detail?: DTDCPiece[]
+  eway_bill?: string
+  is_risk_surcharge_applicable?: boolean
+}
+
+export interface DTDCShipmentFilters extends DirectOrderFilters {
+  courier_status?: string
+}
+
+export interface DTDCTracking {
+  trackHeader: Record<string, string>
+  trackDetails: Record<string, string>[]
+}
+
 export interface DirectOrderDelhiveryResponse {
   message: string
   order: DirectOrder
@@ -957,3 +997,30 @@ export interface NextDirectOrderIdResponse {
 export type Issue = Order
 export type Return = Order
 export type SafetyClaimOrder = Order
+
+export interface CourierServiceMode { code: string; label: string; enabled: boolean }
+export interface CourierSettings {
+  dtdc_modes: CourierServiceMode[]
+  dtdc_default_service: string
+  dtdc_default_commodity: string
+  auto_download_dtdc_labels: boolean
+  dtdc_label_code: string
+  updated_at?: string
+}
+export interface ShipmentTrackingEvent { status: string; location?: string; destination?: string; occurred_at?: string; remarks?: string; code?: string }
+export interface ShipmentTracking {
+  courier: string
+  awb: string
+  status: string
+  reported_status?: string
+  current_location?: string
+  origin?: string
+  destination?: string
+  expected_delivery?: string
+  last_event_at?: string
+  remarks?: string
+  tracking_url: string
+  checked_at: string
+  events: ShipmentTrackingEvent[]
+}
+export interface ShipmentTrackingResponse { order: DirectOrder; tracking: ShipmentTracking }

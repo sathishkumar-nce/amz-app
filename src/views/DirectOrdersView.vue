@@ -11,6 +11,8 @@
 
       <div class="hero-actions">
         <router-link to="/direct-orders/new" class="btn btn-primary">Create Order</router-link>
+        <router-link to="/courier-shipments" class="btn btn-secondary">Courier Shipments</router-link>
+        <router-link to="/order-tracking" class="btn btn-secondary">Tracking & WhatsApp</router-link>
         <router-link to="/direct-orders/cnc-ops" class="btn btn-secondary">Direct CNC Ops</router-link>
       </div>
     </section>
@@ -89,7 +91,7 @@
             :disabled="selectedOrderIds.length === 0 || busy"
             @click="handleBulkForward"
           >
-            {{ bulkForwarding ? `Creating ${selectedOrderIds.length} Forward Orders...` : 'Create Forward Orders' }}
+            {{ bulkForwarding ? 'Loading selected orders…' : 'Schedule Selected Orders' }}
           </button>
         </div>
       </div>
@@ -169,13 +171,14 @@
                         <div class="awb-editor">
                           <input
                             v-model.trim="awbEdits[order.order_id]"
+                            :disabled="isManagedDTDC(order)"
                             type="text"
                             placeholder="Add or update AWB"
                           />
                           <button
                             type="button"
                             class="btn btn-ghost btn-ghost--small"
-                            :disabled="busy || awbSavingOrderId === order.order_id"
+                            :disabled="busy || isManagedDTDC(order) || awbSavingOrderId === order.order_id"
                             @click="handleAwbSave(order.order_id)"
                           >
                             {{ awbSavingOrderId === order.order_id ? 'Saving...' : 'Save AWB' }}
@@ -191,12 +194,12 @@
                       <button
                         type="button"
                         class="action-link action-link--button action-link--accent"
-                        :disabled="busy || forwardingOrderId === order.order_id"
-                        @click="handleDelhivery(order.order_id)"
+                        :disabled="busy || shipmentLocked(order) || order.order_status === 'cancelled'"
+                        @click="bookingOrders = [order]"
                       >
-                        {{ forwardingOrderId === order.order_id ? 'Creating...' : 'Create Forward' }}
+                        {{ shipmentLocked(order) ? 'Shipment Created / Pending' : 'Schedule Order' }}
                       </button>
-                      <button type="button" class="action-link action-link--button action-link--danger" :disabled="busy" @click="handleDelete(order.order_id)">
+                      <button type="button" class="action-link action-link--button action-link--danger" :disabled="busy || isManagedDTDC(order)" @click="handleDelete(order.order_id)">
                         Delete
                       </button>
                     </div>
@@ -243,6 +246,7 @@
         />
       </template>
     </section>
+    <CourierBookingDialog v-if="bookingOrders.length" :orders="bookingOrders" @close="closeBooking" />
   </div>
 </template>
 
@@ -252,15 +256,19 @@ import DirectOrderFilterBar from '@/components/DirectOrderFilterBar.vue'
 import DirectOrderSearchBar from '@/components/DirectOrderSearchBar.vue'
 import PaginationControls from '@/components/PaginationControls.vue'
 import StickyHorizontalScrollbar from '@/components/StickyHorizontalScrollbar.vue'
+import CourierBookingDialog from '@/components/CourierBookingDialog.vue'
+import { directOrdersApi } from '@/api/directOrders'
+import { courierError, shipmentLocked } from '@/utils/courier'
 import { useDirectOrdersStore } from '@/stores/directOrders'
-import type { DirectOrderFilters } from '@/types'
+import type { DirectOrder, DirectOrderFilters } from '@/types'
 import { buildDirectOrderAdvancedRequest, createDirectOrderAdvancedFilters } from '@/utils/directOrderListFilters'
 
 const store = useDirectOrdersStore()
 
 const exporting = ref(false)
 const bulkForwarding = ref(false)
-const forwardingOrderId = ref<string | null>(null)
+const bookingOrders = ref<DirectOrder[]>([])
+const isManagedDTDC = (order: DirectOrder) => order.courier_type === 'dtdc' && shipmentLocked(order)
 const awbSavingOrderId = ref<string | null>(null)
 const selectedOrderIds = ref<string[]>([])
 const awbEdits = ref<Record<string, string>>({})
@@ -507,44 +515,25 @@ const handleAwbSave = async (orderId: string) => {
   }
 }
 
-const handleDelhivery = async (orderId: string) => {
-  if (!confirm(`Create Delhivery forward order for ${orderId}?`)) {
-    return
-  }
-
-  forwardingOrderId.value = orderId
-  try {
-    const response = await store.createDelhiveryForwardOrder(orderId)
-    alert(response.message)
-  } catch (error: any) {
-    alert(error.response?.data?.error || 'Failed to create Delhivery forward order')
-  } finally {
-    forwardingOrderId.value = null
-  }
-}
-
 const handleBulkForward = async () => {
-  if (selectedOrderIds.value.length === 0) return
+  if (!selectedOrderIds.value.length) return
   bulkForwarding.value = true
   try {
-    const response = await store.createBulkDelhiveryForwardOrders(selectedOrderIds.value)
-    const failureSummary = response.failures.slice(0, 3).map((item) => `${item.order_id}: ${item.error}`).join('\n')
-    const message = [
-      `${response.success_count} order(s) forwarded successfully.`,
-      response.failure_count > 0 ? `${response.failure_count} failed.` : '',
-      failureSummary,
-    ].filter(Boolean).join('\n')
-    alert(message)
-    if (response.success_count > 0) {
-      const successIds = new Set(response.successes.map((item) => item.order_id))
-      selectedOrderIds.value = selectedOrderIds.value.filter((orderId) => !successIds.has(orderId))
+    const selected: DirectOrder[] = []
+    const ids = [...selectedOrderIds.value]
+    for (let offset = 0; offset < ids.length; offset += 10) {
+      selected.push(...await Promise.all(ids.slice(offset, offset + 10).map(id => directOrdersApi.getById(id))))
     }
-    await loadOrders()
-  } catch (error: any) {
-    alert(error.response?.data?.error || 'Failed to create bulk Delhivery forward orders')
-  } finally {
-    bulkForwarding.value = false
-  }
+    bookingOrders.value = selected
+  } catch (error) {
+    alert(await courierError(error))
+  } finally { bulkForwarding.value = false }
+}
+
+const closeBooking = async () => {
+  bookingOrders.value = []
+  selectedOrderIds.value = []
+  await loadOrders()
 }
 
 onMounted(async () => {

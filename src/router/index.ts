@@ -183,6 +183,30 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/courier-settings',
+      name: 'courier-settings',
+      component: () => import('@/views/CourierSettingsView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/courier-shipments',
+      name: 'courier-shipments',
+      component: () => import('@/views/CourierShipmentsView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/order-tracking',
+      name: 'order-tracking',
+      component: () => import('@/views/OrderTrackingView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/dtdc-shipments',
+      name: 'dtdc-shipments',
+      component: () => import('@/views/DTDCShipmentsView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/direct-orders/new',
       name: 'direct-order-create',
       component: () => import('@/views/DirectOrderFormView.vue'),

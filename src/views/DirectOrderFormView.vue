@@ -138,10 +138,12 @@
             </div>
           </div>
 
+          <p v-if="courierTypeSelection === 'dtdc' && !courierIdentityLocked">DTDC uses the seller's pickup settings. Choose the service and commodity when scheduling the saved order.</p>
+          <p v-if="courierIdentityLocked">This DTDC shipment's courier and AWB are managed by the integration. Use DTDC Shipments for tracking, labels, and cancellation. Editing this order does not update the shipment already booked with DTDC.</p>
           <div class="section-grid section-grid--compact">
             <label>
               <span>Courier Type</span>
-              <select v-model="courierTypeSelection" class="input-compact">
+              <select v-model="courierTypeSelection" :disabled="courierIdentityLocked" class="input-compact">
                 <option v-for="option in courierTypeOptions" :key="option" :value="option">{{ option }}</option>
                 <option value="custom">custom</option>
               </select>
@@ -150,12 +152,12 @@
               <span>Custom Courier Type</span>
               <input v-model.trim="form.courier_type" placeholder="Enter courier type" class="input-compact" />
             </label>
-            <label>
-              <span>Pickup Location</span>
+            <label v-if="courierTypeSelection !== 'dtdc'">
+              <span>Delhivery Pickup Location</span>
               <input v-model.trim="form.pickup_location" placeholder="Tekgien Softwares" />
             </label>
-            <label>
-              <span>Service Type</span>
+            <label v-if="courierTypeSelection !== 'dtdc'">
+              <span>Delhivery Service Type</span>
               <select v-model="form.service_type">
                 <option value="surface">surface</option>
                 <option value="express">express</option>
@@ -167,7 +169,7 @@
             </label>
             <label>
               <span>AWB</span>
-              <input v-model.trim="form.awb" placeholder="Leave empty for Delhivery auto-allocation" class="input-compact" />
+              <input v-model.trim="form.awb" :disabled="courierIdentityLocked" placeholder="Leave empty for courier auto-allocation" class="input-compact" />
             </label>
             <label>
               <span>Shipment Weight (g)</span>
@@ -204,13 +206,13 @@
           <div class="section-heading">
             <div>
               <h2>Item Details</h2>
-              <p>Items are optional while saving the order. Add them before creating a Delhivery forward order.</p>
+              <p>Items are optional while saving the order. Complete shipment details before scheduling with a courier.</p>
             </div>
             <button type="button" class="btn-secondary" @click="addItem">Add Item</button>
           </div>
 
           <div v-if="form.items.length === 0" class="empty-items-note">
-            Save can work without items. Add at least one item with HSN, weight, and dimensions before forwarding to Delhivery.
+            Save can work without items. Delhivery needs an item with HSN; DTDC needs shipment weight, dimensions, declared value, and customer address. Choose a courier when scheduling the saved order.
           </div>
 
           <div class="item-card" v-for="(item, index) in form.items" :key="index">
@@ -329,6 +331,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDirectOrdersStore } from '@/stores/directOrders'
+import { shipmentLocked } from '@/utils/courier'
 import stateCodes from '@/data/stateCodes.json'
 import type { CreateDirectOrderRequest, DirectOrder, DirectOrderItem, DirectOrderPincodeLookupResponse, UpdateDirectOrderRequest } from '@/types'
 
@@ -338,6 +341,8 @@ const store = useDirectOrdersStore()
 
 const isEdit = computed(() => typeof route.params.id === 'string' && route.params.id.length > 0)
 const submitting = ref(false)
+const savedOrder = ref<DirectOrder | null>(null)
+const courierIdentityLocked = computed(() => Boolean(savedOrder.value?.courier_type === 'dtdc' && shipmentLocked(savedOrder.value)))
 const pincodeLookupState = ref<'idle' | 'loading' | 'success' | 'error'>('idle')
 const pincodeLookupMessage = ref('')
 const pincodeLookupResult = ref<DirectOrderPincodeLookupResponse | null>(null)
@@ -826,6 +831,7 @@ onMounted(async () => {
   try {
     const order = await store.fetchOrderById(route.params.id as string)
     if (order) {
+      savedOrder.value = order
       hydrateForm(order)
     }
   } catch (error: any) {

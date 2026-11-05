@@ -131,6 +131,8 @@ const navSections = computed(() => {
       items: [
         { to: '/direct-orders/dashboard', label: 'Direct Dashboard' },
         { to: '/direct-orders', label: 'Direct Orders' },
+        { to: '/courier-shipments', label: 'Courier Shipments' },
+        { to: '/order-tracking', label: 'Tracking & WhatsApp' },
         { to: '/direct-orders/cnc-ops', label: 'Direct CNC Ops' },
       ],
     },
@@ -147,6 +149,7 @@ const navSections = computed(() => {
         { to: '/review-followup-settings', label: 'Review Follow-Up Settings' },
         { to: '/amazon-row-highlight-settings', label: 'Row Highlight Settings' },
         { to: '/interakt-settings', label: 'Interakt Settings' },
+        { to: '/courier-settings', label: 'Courier Settings' },
       ],
     },
   ]

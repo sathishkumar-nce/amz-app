@@ -4,8 +4,9 @@
       <router-link to="/direct-orders" class="back-link">Back to Direct Orders</router-link>
       <div class="top-actions" v-if="order">
         <router-link :to="`/direct-orders/${order.order_id}/edit`" class="btn-secondary">Edit</router-link>
-        <button class="btn-primary" :disabled="syncing" @click="handleDelhiveryForwardOrder">
-          {{ syncing ? 'Creating...' : 'Create Forward Order In Delhivery' }}
+        <router-link to="/dtdc-shipments" class="btn-secondary">DTDC Shipments</router-link>
+        <button class="btn-primary" :disabled="shipmentLocked(order) || order.order_status === 'cancelled'" @click="showBooking = true">
+          {{ shipmentLocked(order) ? 'Shipment Created / Pending' : 'Schedule Order' }}
         </button>
       </div>
     </div>
@@ -66,6 +67,11 @@
             </div>
           </section>
 
+          <section v-if="order.courier_type === 'dtdc' && shipmentLocked(order)" class="detail-section">
+            <h2>DTDC Tracking</h2>
+            <DTDCShipmentActions :order="order" :tracking-enabled="trackingEnabled" @updated="order = $event" />
+          </section>
+
           <section class="detail-section">
             <div class="section-header">
               <h2>Notes</h2>
@@ -99,11 +105,16 @@
         </section>
       </template>
     </section>
+    <CourierBookingDialog v-if="showBooking && order" :orders="[order]" @close="closeBooking" @updated="order = $event" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import CourierBookingDialog from '@/components/CourierBookingDialog.vue'
+import DTDCShipmentActions from '@/components/DTDCShipmentActions.vue'
+import { directOrdersApi } from '@/api/directOrders'
+import { shipmentLocked } from '@/utils/courier'
 import { useRoute } from 'vue-router'
 import { useDirectOrdersStore } from '@/stores/directOrders'
 import type { DirectOrder } from '@/types'
@@ -111,7 +122,8 @@ import type { DirectOrder } from '@/types'
 const route = useRoute()
 const store = useDirectOrdersStore()
 const order = ref<DirectOrder | null>(null)
-const syncing = ref(false)
+const showBooking = ref(false)
+const trackingEnabled = ref(false)
 
 const fullAddress = computed(() => {
   if (!order.value) return 'Not set'
@@ -136,22 +148,14 @@ const formatCurrency = (value?: number | null) => value == null ? 'Not set' : `â
 const formatDate = (value?: string | null) => value ? new Date(value).toLocaleDateString() : 'Not set'
 const formatSize = (width?: number | null, length?: number | null) => (width == null && length == null ? 'NA' : `${width ?? '-'} x ${length ?? '-'}`)
 
-const handleDelhiveryForwardOrder = async () => {
-  if (!order.value) return
-  syncing.value = true
-  try {
-    const response = await store.createDelhiveryForwardOrder(order.value.order_id)
-    order.value = response.order
-    alert(response.message)
-  } catch (error: any) {
-    alert(error.response?.data?.error || 'Failed to create Delhivery forward order')
-  } finally {
-    syncing.value = false
-  }
+const closeBooking = async () => {
+  showBooking.value = false
+  order.value = await store.fetchOrderById(route.params.id as string)
 }
 
 onMounted(async () => {
   order.value = await store.fetchOrderById(route.params.id as string)
+  try { trackingEnabled.value = (await directOrdersApi.dtdcSettings()).tracking_enabled } catch { /* Settings are checked again on the shipments screen. */ }
 })
 </script>
 
