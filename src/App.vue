@@ -106,6 +106,7 @@ const handleUnauthorized = () => {
 
 const navSections = computed(() => {
   const sections = [
+    { title: 'Workspace', items: [{ to: '/tasks', label: 'Task Board' }] },
     {
       title: 'Orders',
       items: [
@@ -158,6 +159,7 @@ const navSections = computed(() => {
     sections.push({
       title: 'Admin',
       items: [
+        { to: '/admin/operations', label: 'Operations Dashboard' },
         { to: '/users-admin', label: 'Users' },
       ],
     })

@@ -52,7 +52,7 @@
           :total-pages="ordersStore.returnPagination.totalPages"
           item-label="orders"
           editable
-          helper-text="Update the return fields inline, then save each row."
+          helper-text="Update the return fields inline, then save each row. Mark direct conversion after processing the direct sale; this records the outcome."
         />
 
         <div ref="sheetWrapRef" class="sheet-wrap">
@@ -81,6 +81,7 @@
                 <th class="cell-followup">Return Initiated Followup Action</th>
                 <th class="cell-toggle">Return Initiated Compromised</th>
                 <th class="cell-reason">Return Initiated Compromised Reason</th>
+                <th class="cell-toggle">Converted to Direct Sale</th>
                 <th class="cell-actions">Actions</th>
               </tr>
             </thead>
@@ -157,6 +158,7 @@
                     placeholder="Return initiated compromised reason"
                   />
                 </td>
+                <td class="cell-toggle"><label class="toggle"><input v-model="row.edit.return_converted_direct" type="checkbox" :aria-label="`Converted to direct sale ${row.order.amazon_order_id} product ${row.product.order_product_id}`" /><span class="toggle__track"><span class="toggle__thumb" /></span><span class="toggle__label">{{ row.edit.return_converted_direct ? 'Yes' : 'No' }}</span></label></td>
                 <td class="cell-actions">
                   <button
                     type="button"
@@ -219,6 +221,7 @@ type SheetRow = {
 }
 
 type ReturnEditRow = {
+  return_converted_direct: boolean
   return_initiated: boolean
   return_initiated_reason: string
   return_initiated_followup_action: string
@@ -269,6 +272,7 @@ const sheetRows = computed<SheetRow[]>(() =>
 )
 
 const buildRowEdit = (row: SheetRow): ReturnEditRow => ({
+  return_converted_direct: row.product.return_converted_direct === true,
   return_initiated: row.product.return_initiated === true,
   return_initiated_reason: row.product.return_initiated_reason ?? '',
   return_initiated_followup_action: row.product.return_initiated_followup_action ?? '',
@@ -459,6 +463,7 @@ const saveRow = async (row: SheetRow) => {
   }
 
   await saveProductFields(row, {
+    return_converted_direct: edit.return_converted_direct,
     return_initiated: edit.return_initiated,
     return_initiated_reason: edit.return_initiated_reason.trim() || '',
     return_initiated_followup_action: edit.return_initiated_followup_action.trim() || '',

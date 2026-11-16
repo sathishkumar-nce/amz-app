@@ -14,6 +14,8 @@ const router = createRouter({
       component: () => import('@/views/ExecutiveDashboardView.vue'),
       meta: { requiresAuth: true }
     },
+    { path: '/tasks', name: 'task-board', component: () => import('@/views/KanbanBoardView.vue'), meta: { requiresAuth: true } },
+    { path: '/admin/operations', name: 'operations-dashboard', component: () => import('@/views/OperationsDashboardView.vue'), meta: { requiresAuth: true, requiresAdmin: true } },
     {
       path: '/login',
       name: 'login',
@@ -248,11 +250,15 @@ const router = createRouter({
 })
 
 // Navigation guard for authentication
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
   
+  if (to.meta.requiresAdmin && authStore.isAuthenticated && !authStore.user) await authStore.fetchUser()
+
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
     next({ name: 'login' })
+  } else if (to.meta.requiresAdmin && authStore.user?.username !== 'admin') {
+    next({ name: 'home' })
   } else if (authStore.user?.must_change_password && to.name !== 'change-password') {
     next({ name: 'change-password' })
   } else if (to.name === 'change-password' && authStore.user && !authStore.user.must_change_password) {

@@ -56,6 +56,8 @@ export interface OrderProduct {
   customer_width_in_mm?: number | null
   customer_length_in_mm?: number | null
   corner_radius_and_notes?: string | null
+  return_converted_direct?: boolean
+  return_converted_direct_updated_at?: string | null
   safety_claimed?: boolean | null
   safety_claimed_updated_at?: string | null
   safety_claim_issues?: string | null
@@ -703,6 +705,7 @@ export interface UpdateManualFieldsRequest {
 }
 
 export interface UpdateProductManualFieldsRequest {
+  return_converted_direct?: boolean
   default_width_in_inches?: number
   default_length_in_inches?: number
   customer_width_in_inches?: number
